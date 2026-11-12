@@ -265,3 +265,12 @@ GitHub Copilot (GitHub), Kimi (Moonshot AI), MiniMax (MiniMax), Mistral AI (Mist
 OpenAI (OpenAI). DS Bot is not affiliated with or endorsed by these owners.
 Vector marks from Simple Icons (https://simpleicons.org), CC0-1.0.
 Devin, OpenAI and Antigravity marks from the vendors' application icons.
+
+==============================================================================
+Adapted from forks of this repository (Apache License 2.0)
+==============================================================================
+- Rory-X/DeepSeek-Bot: the one-page chat tail read in ds-bot/src/host/parts.js
+  (commit 5fd89255, "Stop the cold start from reading every Bot's session pages").
+- rml4791lol-lang/DS-Bot: the repeated-question prompt rule in
+  ds-bot/src/host/prompt.js (commit 9945f6bc, "Do not redo a question this
+  conversation already answered").
