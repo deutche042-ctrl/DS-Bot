@@ -1,7 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native'
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Dimensions, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as SecureStore from 'expo-secure-store'
 import { onPrefsChange, readPrefs } from '../store.ts'
@@ -322,7 +322,11 @@ function Inner({ initial }: { initial: ChatTarget | null }) {
 
 export default function ShellB() {
   const { p } = useTheme()
-  const width = Math.min(Dimensions.get('window').width * 0.85, 340)
+  // The closed drawer rests one panel width offscreen, so the width must follow the
+  // window. A width captured once leaves that offset stale after a rotation and parks
+  // the panel mid-screen (#RTL).
+  const { width: windowWidth } = useWindowDimensions()
+  const width = Math.min(windowWidth * 0.85, 340)
   // Render the navigator only once the saved chat is known, so it can start on it.
   const [saved, setSaved] = useState<ChatTarget | null | undefined>(undefined)
   useEffect(() => {

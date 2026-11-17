@@ -4,6 +4,7 @@ import type { RpcClient } from '../../../link/src/index.ts'
 import { callBot, callBotState, openLink, type TeamState } from '../connection.ts'
 import { ensureUnlock } from './gate.ts'
 import { createNoticeCursor, type NoticeCursorAnswer } from './notices.ts'
+import { helloProblem } from './hello.ts'
 import { OPTIMISTIC, optimistic, withWrites, type Write } from './optimistic.ts'
 import { t } from '../ui/i18n.ts'
 import type { PhoneIdentity, SavedComputer } from '../store.ts'
@@ -242,13 +243,13 @@ export function useTeamLink(computer: SavedComputer, identity: PhoneIdentity) {
           return
         }
         const helloAnswer = helloResult as Hello
-        if (helloAnswer.api === null) {
+        const problem = helloProblem(helloAnswer.api, helloAnswer.apiMax, PHONE_API)
+        if (problem !== null) {
           // Both sides answered, but they share no protocol version. `apiMax` says which
           // side is ahead, so a newer computer asks for a newer app on the phone.
-          const hostMax = typeof helloAnswer.apiMax === 'number' ? helloAnswer.apiMax : null
           if (activeClient === client) activeClient = undefined
           if (clientRef.current === client) clientRef.current = undefined
-          setError(t(hostMax !== null && hostMax > PHONE_API ? 'Update DS Bot on this phone to use this computer.' : 'Update DS Bot on the computer to use this phone.'))
+          setError(t(problem === 'update-phone' ? 'Update DS Bot on this phone to use this computer.' : 'Update DS Bot on the computer to use this phone.'))
           setLinked(false)
           void client.close()
           connecting = false
