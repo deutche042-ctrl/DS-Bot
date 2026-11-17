@@ -17306,6 +17306,9 @@ div:has(> nav [class*="_marks"]){display:none!important}
    the edge. This covers the group's chat flow, not only DS Bot's own panels. */
 @media (max-width:640px){
 .bt-msg,.bt-astack[data-lead]>.bt-msg{max-width:100%}
+/* A pane is positioned against the desktop's right column. On a phone that column is
+   gone, so the pane spans the screen instead of floating with a gap beside it. */
+.bt-pane{left:0}
 .bt-bubble,[data-chat-flow] [class*="_bubble"]{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
 .bt-group-msg,.bt-group-name{max-width:100%}
 [data-chat-flow] :is(pre,table){max-width:100%;overflow-x:auto}
@@ -26043,6 +26046,12 @@ label.bt-bs-row{cursor:text}
 .bt-switch:active:not(:disabled) .bt-switch-knob{width:21px}
 .bt-switch[aria-checked=true]:active:not(:disabled) .bt-switch-knob{transform:translateX(11px)}
 .bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:bt-veil-in .18s ease-out}
+/* The editor's anchor sits near the left edge of a phone pane, so a popover centred on
+   it puts most of the editor off the screen. The phone gets a bottom sheet instead:
+   full width, opaque over the settings page, and scrollable when the grid is tall. */
+@media (max-width:640px){
+  .bt-bs .bt-avedit{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));top:auto;width:auto;max-height:calc(100dvh - 120px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow-y:auto;transform:none;transform-origin:bottom center;border-radius:20px;background:var(--bt-main)}
+}
 @media (prefers-reduced-motion:reduce){.bt-switch,.bt-switch-knob{transition:none}.bt-avedit :is(.bt-shapes,.bt-colors,.bt-dropzone){animation:none}}
 `;
 

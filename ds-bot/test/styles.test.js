@@ -217,3 +217,17 @@ test('an active message toolbar stacks above the next message', () => {
   // so without a z-index they paint over a toolbar that hangs below this message.
   assert.match(css, /\.bt-msg:hover,\.bt-msg:focus-within,\.bt-msg:has\(>\.bt-msg-line>\.bt-tools\[data-open\]\)\{z-index:2\}/)
 })
+
+test('on a phone an overlay pane spans the screen, not the desktop column offset', () => {
+  const css = readFileSync(new URL('../src/client/styles.js', import.meta.url), 'utf8')
+  // A pane is pinned to the desktop's right column. On a phone that column is gone,
+  // so without left:0 the pane floats with a gap instead of covering the screen.
+  assert.match(css, /@media \(max-width:640px\)\{[\s\S]*?\.bt-pane\{left:0\}/)
+})
+
+test('the avatar editor becomes a scrollable bottom sheet on a phone', () => {
+  const source = readFileSync(new URL('../src/client/bot-settings.js', import.meta.url), 'utf8')
+  // Centred on its anchor the editor ran off the screen; the phone rule is a sheet
+  // that stays inside the viewport and scrolls when the character grid is tall.
+  assert.match(source, /@media \(max-width:640px\)\{\s*\.bt-bs \.bt-avedit\{position:fixed;left:12px;right:12px;bottom:[^}]*max-height:calc\(100dvh[^}]*overflow-y:auto/)
+})

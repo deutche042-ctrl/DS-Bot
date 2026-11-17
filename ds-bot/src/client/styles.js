@@ -1408,6 +1408,9 @@ div:has(> nav [class*="_marks"]){display:none!important}
    the edge. This covers the group's chat flow, not only DS Bot's own panels. */
 @media (max-width:640px){
 .bt-msg,.bt-astack[data-lead]>.bt-msg{max-width:100%}
+/* A pane is positioned against the desktop's right column. On a phone that column is
+   gone, so the pane spans the screen instead of floating with a gap beside it. */
+.bt-pane{left:0}
 .bt-bubble,[data-chat-flow] [class*="_bubble"]{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
 .bt-group-msg,.bt-group-name{max-width:100%}
 [data-chat-flow] :is(pre,table){max-width:100%;overflow-x:auto}
