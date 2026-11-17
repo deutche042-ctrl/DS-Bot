@@ -15360,7 +15360,7 @@ var stripToolCallTags = (text) => {
     return before && after && !/\s/.test(before) && !/\s/.test(after) ? " " : "";
   });
 };
-var INTERNAL_TEXT = /\[\s*(?:SCHEDULE CHANGE|SCHEDULE REMINDER|Retry after a failed turn|Your profile was updated\b[^\]]*|Message from\b[^\]]*|Reply from\b[^\]]*|Group post from\b[^\]]*)\]/i;
+var INTERNAL_TEXT = /^(?:收到[：:]\s*)?\[\s*(?:SCHEDULE CHANGE|SCHEDULE REMINDER|Retry after a failed turn|Your profile was updated\b[^\]]*|Message from\b[^\]]*|Reply from\b[^\]]*|Group post from\b[^\]]*)\]/i;
 var INTERNAL_LINE = /^(?:A scheduled task involving this session|Your profile was updated\b)/i;
 function stripInternalText(text) {
   return String(text ?? "").split("\n").filter((line) => {
@@ -27146,9 +27146,9 @@ function scanReplies(text, start, replies) {
     } else if (ch === "]" && depth === 0) break;
   }
 }
-function stackReplies(replies) {
+function stackItems(entries2) {
   const items = [];
-  replies.forEach((reply, index) => {
+  entries2.forEach(({ reply, index }) => {
     const last = items.at(-1);
     if (reply.kind === void 0 && last?.reply.kind === void 0 && last?.reply.botId === reply.botId && last.claims === void 0 && (last.changes === void 0 || reply.changes?.sessionId === last.changes.sessionId && reply.changes?.turn === last.changes.turn)) {
       last.texts.push(reply.text);
@@ -27172,22 +27172,26 @@ function stackReplies(replies) {
   });
   return items;
 }
+function stackReplies(replies) {
+  return stackItems(replies.map((reply, index) => ({ reply, index })));
+}
 var endsWorkEpisode = (reply) => reply.kind === void 0 || ["done", "stopped", "approval", "resumed", "cut", "failed", "helper-failed", "missed"].includes(reply.kind);
 function drawnReplies(replies) {
   const kept = [];
   for (let index = 0; index < replies.length; index += 1) {
     const reply = replies[index];
     if (reply?.kind !== "working") {
-      kept.push(reply);
+      kept.push({ reply, index });
       continue;
     }
     const botId = reply.botId;
     if (replies.slice(index + 1).some((later) => later?.botId === botId && endsWorkEpisode(later))) continue;
     const last = kept.at(-1);
-    if (last?.kind === "working" && last.botId === botId) kept[kept.length - 1] = { ...last, starts: (last.starts ?? 1) + 1 };
-    else kept.push(reply);
+    if (last?.reply.kind === "working" && last.reply.botId === botId) {
+      kept[kept.length - 1] = { ...last, reply: { ...last.reply, starts: (last.reply.starts ?? 1) + 1 } };
+    } else kept.push({ reply, index });
   }
-  return stackReplies(kept);
+  return stackItems(kept);
 }
 
 // src/shared/file-chunks.js
@@ -29010,6 +29014,9 @@ function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnClock, us
           time: data.time,
           claims: source.claims,
           changes: source.changes,
+          // A member that finishes after the round closed posts with its delivered files
+          // on the source; the history row carries them the same way (parts.js).
+          files: source.delivered,
           whole: file ? { length: source.length, load: () => actions.fileText(file) } : void 0
         });
       }
@@ -41666,11 +41673,11 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
 .bt-member{display:flex;flex-direction:column;border-radius:12px;animation:bt-rise .18s ease-out backwards}
 .bt-member-row{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 8px;border-radius:12px;transition:background-color .12s ease}
 .bt-member-row:hover{background:var(--bt-hover)}
-.bt-member-open{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 0;border:0;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-member-open{flex:none;display:flex;align-items:center;padding:8px 0;border:0;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
 .bt-member-open>.bt-mark{flex:none}
-.bt-member-text{display:flex;flex-direction:column;min-width:0;gap:1px}
+.bt-member-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .bt-member-line{display:flex;align-items:center;gap:6px;min-width:0}
-.bt-member-name{min-width:0;font-size:14px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-radius:4px}
+.bt-member-name{min-width:0;font:inherit;font-size:14px;line-height:20px;padding:0;border:0;background:none;color:inherit;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-radius:4px}
 .bt-member-name:hover{color:var(--bt-ink);text-decoration:underline;text-underline-offset:2px}
 .bt-member-name:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
 .bt-member-line>.bt-tag{font-size:11px;line-height:15px;padding:0 5px}
@@ -42041,7 +42048,6 @@ var markOf = (entry) => entry?.state === "ask" ? "alert" : entry?.state === "wor
 function MemberRow({ member, entry, room: room2, roster, actions }) {
   const mention = (event) => {
     event.preventDefault();
-    event.stopPropagation();
     actions.insertMention?.(room2.sessionId ?? room2.id, member.name);
   };
   return (0, import_react69.createElement)(
@@ -42050,30 +42056,28 @@ function MemberRow({ member, entry, room: room2, roster, actions }) {
     (0, import_react69.createElement)(
       "div",
       { className: "bt-member-row" },
+      // The avatar opens the chat and the name mentions; they are sibling controls,
+      // because a focusable control may not sit inside a button.
       (0, import_react69.createElement)(
         "button",
         { type: "button", className: "bt-member-open", title: t("Open {name}'s chat", { name: member.name }), onClick: () => actions.openSession(member.id) },
-        (0, import_react69.createElement)(BotMark, { bot: member, size: 32, state: markOf(entry) }),
+        (0, import_react69.createElement)(BotMark, { bot: member, size: 32, state: markOf(entry) })
+      ),
+      (0, import_react69.createElement)(
+        "span",
+        { className: "bt-member-text" },
         (0, import_react69.createElement)(
           "span",
-          { className: "bt-member-text" },
-          (0, import_react69.createElement)(
-            "span",
-            { className: "bt-member-line" },
-            (0, import_react69.createElement)("span", {
-              className: "bt-member-name",
-              role: "button",
-              tabIndex: 0,
-              title: t("Mention {name}", { name: member.name }),
-              onClick: mention,
-              onKeyDown: (event) => {
-                if (event.key === "Enter" || event.key === " ") mention(event);
-              }
-            }, member.name),
-            room2.admin === member.id ? (0, import_react69.createElement)("span", { className: "bt-tag" }, t("Admin")) : null
-          ),
-          (0, import_react69.createElement)(MemberState, { entry, bot: member, room: room2, roster })
-        )
+          { className: "bt-member-line" },
+          (0, import_react69.createElement)("button", {
+            type: "button",
+            className: "bt-member-name",
+            title: t("Mention {name}", { name: member.name }),
+            onClick: mention
+          }, member.name),
+          room2.admin === member.id ? (0, import_react69.createElement)("span", { className: "bt-tag" }, t("Admin")) : null
+        ),
+        (0, import_react69.createElement)(MemberState, { entry, bot: member, room: room2, roster })
       ),
       (0, import_react69.createElement)(StopMemberWork, { entry, bot: member, room: room2, actions })
     ),

@@ -224,3 +224,9 @@ test('an internal schedule marker in a reply does not reach the reader', () => {
   props.node.data.blocks = [{ kind: 'text', text: '收到：[SCHEDULE CHANGE] A task changed here.\n还有别的要我盯的吗？' }]
   assert.deepEqual(markdownOf(props).map(node => node.props.text), ['还有别的要我盯的吗？'])
 })
+
+test('a reply that mentions a relay header mid-sentence keeps its words', () => {
+  const { props } = cellProps()
+  props.node.data.blocks = [{ kind: 'text', text: 'The note said [Message from Writer] and then stopped.' }]
+  assert.deepEqual(markdownOf(props).map(node => node.props.text), ['The note said [Message from Writer] and then stopped.'])
+})

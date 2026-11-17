@@ -767,6 +767,9 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
           bot: poster, text: file ? stripLongNote(text) : text, room, sessionId, roster, actions, msgKey: `${sessionId}:post:${data.seq ?? node.key}`, useUi, time: data.time,
           claims: source.claims,
           changes: source.changes,
+          // A member that finishes after the round closed posts with its delivered files
+          // on the source; the history row carries them the same way (parts.js).
+          files: source.delivered,
           whole: file ? { length: source.length, load: () => actions.fileText(file) } : undefined,
         })
       }

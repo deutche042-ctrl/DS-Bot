@@ -249,11 +249,13 @@ test('a group member name mentions the member, and the row still opens its chat'
   const row = member.type(member.props)
   const [name] = classNodes(row, 'bt-member-name')
   assert.ok(name, 'the member name is its own target')
-  let stopped = 0
-  name.props.onClick({ preventDefault() {}, stopPropagation() { stopped += 1 } })
-  assert.equal(stopped, 1, 'the name does not also open the chat')
-  name.props.onKeyDown({ key: 'Enter', preventDefault() {}, stopPropagation() { stopped += 1 } })
-  assert.deepEqual(calls, [['mention', 'g', 'Chief'], ['mention', 'g', 'Chief']])
+  // The name is a real button beside the avatar button, never a focusable span inside
+  // one: keyboard activation comes from the element, not a key handler.
+  assert.equal(name.props.type, 'button')
+  let prevented = 0
+  name.props.onClick({ preventDefault() { prevented += 1 }, stopPropagation() {} })
+  assert.equal(prevented, 1)
+  assert.deepEqual(calls, [['mention', 'g', 'Chief']])
   const [open] = classNodes(row, 'bt-member-open')
   assert.ok(open)
   open.props.onClick()

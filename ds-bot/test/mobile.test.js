@@ -852,9 +852,10 @@ test('file-read reads a whole file from the readable folders and blocks everythi
   const { chief } = await team(call)
   const workDir = mkdtempSync(join(tmpdir(), 'ds-bot-file-read-'))
   t.after(() => rmSync(workDir, { recursive: true, force: true }))
-  const outsideFile = join(tmpdir(), `ds-bot-outside-${Date.now()}.txt`)
+  const outsideDir = mkdtempSync(join(tmpdir(), 'ds-bot-outside-'))
+  t.after(() => rmSync(outsideDir, { recursive: true, force: true }))
+  const outsideFile = join(outsideDir, 'outside.txt')
   writeFileSync(outsideFile, 'outside every readable folder')
-  t.after(() => rmSync(outsideFile, { force: true }))
 
   mkdirSync(join(workDir, 'charts'), { recursive: true })
   writeFileSync(join(workDir, 'charts', 'notes.txt'), 'team notes')
@@ -1090,4 +1091,14 @@ test('switching to an earlier part closes open question and view cards instead o
   const after = (await call('state', {})).value
   assert.deepEqual(after.questions, {})
   assert.deepEqual(after.views, {})
+})
+
+// A file read at the advertised limit travels as base64 plus JSON. Reserving the
+// envelope keeps the largest allowed read inside one link message; without it the
+// encoder rejects the answer and the tunnel drops.
+test('a file read at the advertised limit still fits one link message', () => {
+  const bytes = fileMaxFor(API_MESSAGE_BYTES)
+  const base64 = 'A'.repeat(Math.ceil(bytes / 3) * 4)
+  const answer = JSON.stringify({ ok: true, value: { name: 'report.pdf', mime: 'application/pdf', bytes: base64, size: bytes } })
+  assert.ok(Buffer.byteLength(answer) <= API_MESSAGE_BYTES, `${Buffer.byteLength(answer)} > ${API_MESSAGE_BYTES}`)
 })

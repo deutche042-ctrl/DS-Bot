@@ -1179,9 +1179,16 @@ export function install(rt) {
       markSlotWorked(room.id, slot)
       sayWorking(room, member)
     } else if (changes !== undefined && final === undefined && typeof reply === 'string') {
+      // A turn that only changed files still has its completion line; if it also
+      // presented files, they ride that row like any other result.
+      const delivered = await rt.turnDeliverables?.(session.id)
       slot.status = 'posted'
-      say(room, { who: member.name, botId: member.id, kind: 'done', text: '', changes })
-      posted.push(room.seq)
+      if (delivered !== undefined) {
+        posted.push(postInRound(room, member, '', Date.now() - startedAt, undefined, changes, delivered))
+      } else {
+        say(room, { who: member.name, botId: member.id, kind: 'done', text: '', changes })
+        posted.push(room.seq)
+      }
     } else if (final !== undefined || (typeof reply === 'string' && said.length > 0)) {
       slot.status = 'posted'
       if (final !== undefined && final.trim() !== '') {
@@ -1189,22 +1196,31 @@ export function install(rt) {
         const delivered = await rt.turnDeliverables?.(session.id)
         posted.push(postInRound(room, member, final, Date.now() - startedAt, claimsOf(session, final, worked, callsIn(room, member, final)), changes, delivered))
         callFrom(room, round, member, final, called, { worked, byBot: answeredBot })
-      } else if (changes !== undefined) {
+      } else {
         // The turn wrote nothing to hang the change line on (a pass, or an empty final
-        // reply): its completion line carries it, the same place a late completion does.
-        say(room, { who: member.name, botId: member.id, kind: 'done', text: '', changes })
+        // reply). Files it presented still post as their own result row.
+        const delivered = await rt.turnDeliverables?.(session.id)
+        if (delivered !== undefined) postInRound(room, member, '', Date.now() - startedAt, undefined, changes, delivered)
+        else if (changes !== undefined) say(room, { who: member.name, botId: member.id, kind: 'done', text: '', changes })
       }
     } else {
-      slot.status = reply === null ? 'cancelled' : typeof reply === 'string' ? 'passed' : 'missed'
-      round.passed.push(member.name)
-      // A pass that changed files has a review to open even without a word: its
-      // completion line carries the change line, exactly like a late completion.
-      if (changes !== undefined) say(room, { who: member.name, botId: member.id, kind: 'done', text: '', changes })
-      if (reply?.missed) {
-        // The round moved on without this member: the log shows the call and then
-        // silence, which reads as a lost message. The group is told the baton was
-        // dropped, and what brings the member back.
-        say(room, { who: 'DS Bot', kind: 'notice', reason: 'missed', names: [member.name], about: member.id, minutes: Math.round(ROOM_REPLY_TIMEOUT_MS / 60000) })
+      // A file-only turn has no text to carry its files, so the files post as a result.
+      const delivered = await rt.turnDeliverables?.(session.id)
+      if (delivered !== undefined) {
+        slot.status = 'posted'
+        postInRound(room, member, '', Date.now() - startedAt, undefined, changes, delivered)
+      } else {
+        slot.status = reply === null ? 'cancelled' : typeof reply === 'string' ? 'passed' : 'missed'
+        round.passed.push(member.name)
+        // A pass that changed files has a review to open even without a word: its
+        // completion line carries the change line, exactly like a late completion.
+        if (changes !== undefined) say(room, { who: member.name, botId: member.id, kind: 'done', text: '', changes })
+        if (reply?.missed) {
+          // The round moved on without this member: the log shows the call and then
+          // silence, which reads as a lost message. The group is told the baton was
+          // dropped, and what brings the member back.
+          say(room, { who: 'DS Bot', kind: 'notice', reason: 'missed', names: [member.name], about: member.id, minutes: Math.round(ROOM_REPLY_TIMEOUT_MS / 60000) })
+        }
       }
     }
     // A result the admin asked for reports its goal task; a failed model call puts it back.

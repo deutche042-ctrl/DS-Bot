@@ -27,9 +27,12 @@ export const API_MIN = 1
 // whole travels inside one as base64, a third larger than its bytes, so a message of
 // that size carries at most what `fileMaxFor` reads off it. The phone link reassembles
 // at most MAX_SECURE_MESSAGE_BYTES (link/src/frames.ts), so that is the ceiling: a
-// larger answer never crosses the link, whatever this route would accept.
+// larger answer never crosses the link, whatever this route would accept. The base64
+// alone can fill the budget, so the envelope (name, mime, size, RPC fields) reserves
+// its own space; otherwise an allowed read is rejected by the encoder and drops the link.
 export const API_MESSAGE_BYTES = 4 * 1024 * 1024
-export const fileMaxFor = maxMessageBytes => Math.floor((maxMessageBytes * 3) / 4)
+export const API_ENVELOPE_BYTES = 64 * 1024
+export const fileMaxFor = maxMessageBytes => Math.floor(((maxMessageBytes - API_ENVELOPE_BYTES) * 3) / 4)
 const FILE_READ_MAX = fileMaxFor(API_MESSAGE_BYTES)
 export const CAPABILITIES = [
   'state',
@@ -704,11 +707,19 @@ export function install(rt) {
     if (!allowed || await rt.inData?.(realPath)) {
       throw Object.assign(new Error('File outside the readable folders'), { code: 'bot/forbidden' })
     }
-    const info = await stat(realPath).catch(() => undefined)
-    if (info?.isFile() !== true) throw Object.assign(new Error('File not found'), { code: 'bot/not-found' })
-    if (info.size > FILE_READ_MAX) throw fileTooLarge()
-    const bytes = await readFile(realPath)
-    return { name: nameOf(realPath), mime: mimeOf(realPath), bytes: bytes.toString('base64'), size: bytes.length }
+    // Check and read the same open file: a path checked with stat and then read again
+    // can be swapped in between, and the opened handle pins the inode that was checked.
+    const handle = await open(realPath, 'r').catch(() => undefined)
+    if (handle === undefined) throw Object.assign(new Error('File not found'), { code: 'bot/not-found' })
+    try {
+      const info = await handle.stat()
+      if (!info.isFile()) throw Object.assign(new Error('File not found'), { code: 'bot/not-found' })
+      if (info.size > FILE_READ_MAX) throw fileTooLarge()
+      const bytes = await handle.readFile()
+      // The file can grow after stat; the read result decides.
+      if (bytes.length > FILE_READ_MAX) throw fileTooLarge()
+      return { name: nameOf(realPath), mime: mimeOf(realPath), bytes: bytes.toString('base64'), size: bytes.length }
+    } finally { await handle.close() }
   }
 
   async function mobileEndpoint(endpoint, body) {

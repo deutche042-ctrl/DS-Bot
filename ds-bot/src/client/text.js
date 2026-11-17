@@ -92,8 +92,9 @@ export const stripToolCallTags = (text) => {
 }
 // Internal control notices are framed for the model, not for the reader. A model can
 // echo one back into its reply; drop that line instead of showing bracketed plumbing
-// as an answer. Prose on the other lines stays.
-const INTERNAL_TEXT = /\[\s*(?:SCHEDULE CHANGE|SCHEDULE REMINDER|Retry after a failed turn|Your profile was updated\b[^\]]*|Message from\b[^\]]*|Reply from\b[^\]]*|Group post from\b[^\]]*)\]/i
+// as an answer. Only a line that starts with the notice is plumbing: an answer that
+// mentions "[Message from Writer]" mid-sentence keeps its words.
+const INTERNAL_TEXT = /^(?:收到[：:]\s*)?\[\s*(?:SCHEDULE CHANGE|SCHEDULE REMINDER|Retry after a failed turn|Your profile was updated\b[^\]]*|Message from\b[^\]]*|Reply from\b[^\]]*|Group post from\b[^\]]*)\]/i
 const INTERNAL_LINE = /^(?:A scheduled task involving this session|Your profile was updated\b)/i
 export function stripInternalText(text) {
   return String(text ?? '').split('\n')

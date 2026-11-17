@@ -176,23 +176,23 @@ const markOf = entry => (entry?.state === 'ask' ? 'alert' : entry?.state === 'wo
 function MemberRow({ member, entry, room, roster, actions }) {
   const mention = (event) => {
     event.preventDefault()
-    event.stopPropagation()
     actions.insertMention?.(room.sessionId ?? room.id, member.name)
   }
   return h('div', { role: 'listitem', className: 'bt-member' },
     h('div', { className: 'bt-member-row' },
+      // The avatar opens the chat and the name mentions; they are sibling controls,
+      // because a focusable control may not sit inside a button.
       h('button', { type: 'button', className: 'bt-member-open', title: t("Open {name}'s chat", { name: member.name }), onClick: () => actions.openSession(member.id) },
-        h(BotMark, { bot: member, size: 32, state: markOf(entry) }),
-        h('span', { className: 'bt-member-text' },
-          h('span', { className: 'bt-member-line' },
-            h('span', {
-              className: 'bt-member-name', role: 'button', tabIndex: 0,
-              title: t('Mention {name}', { name: member.name }),
-              onClick: mention,
-              onKeyDown: (event) => { if (event.key === 'Enter' || event.key === ' ') mention(event) },
-            }, member.name),
-            room.admin === member.id ? h('span', { className: 'bt-tag' }, t('Admin')) : null),
-          h(MemberState, { entry, bot: member, room, roster }))),
+        h(BotMark, { bot: member, size: 32, state: markOf(entry) })),
+      h('span', { className: 'bt-member-text' },
+        h('span', { className: 'bt-member-line' },
+          h('button', {
+            type: 'button', className: 'bt-member-name',
+            title: t('Mention {name}', { name: member.name }),
+            onClick: mention,
+          }, member.name),
+          room.admin === member.id ? h('span', { className: 'bt-tag' }, t('Admin')) : null),
+        h(MemberState, { entry, bot: member, room, roster })),
       h(StopMemberWork, { entry, bot: member, room, actions })),
     h(MemberApprovals, { entry, bot: member, actions }))
 }

@@ -213,3 +213,17 @@ test('a work start a later row of the same member ended draws nothing, and a run
   ])
   assert.deepEqual(runs.map(item => [item.reply.botId, item.reply.starts ?? null]), [['b', 2], ['c', null]])
 })
+
+// Reaction keys come from the row's index in the round. Dropping a work-start before
+// stacking must not renumber the rows after it, or a reaction moves to another reply.
+test('a dropped work-start keeps the later reply index', () => {
+  // A starts working, B posts, then A finishes: A's start row is dropped, and the rows
+  // after it must keep indexes 1 and 2 from the round, not 0 and 1.
+  const rows = drawnReplies([
+    { kind: 'working', botId: 'a', time: 1 },
+    { kind: undefined, botId: 'b', text: 'B posted', time: 2 },
+    { kind: undefined, botId: 'a', text: 'A finished', time: 3 },
+  ])
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map(row => row.index), [1, 2])
+})

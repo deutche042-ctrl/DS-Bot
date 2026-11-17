@@ -1845,12 +1845,29 @@ export function install(rt) {
   // own chat rows do (#975). Undefined when the tail holds no presented file for the
   // turn that ended, or the page cannot be read.
   const DELIVER_PAGE = 80
+  const DELIVER_PAGES = 10
   async function turnDeliverables(sessionId) {
     if (typeof sessionId !== 'string' || sessionId === '') return undefined
     try {
-      const page = await ctx.sessionController.page({ address: { kind: 'session', sessionId }, maxMessages: DELIVER_PAGE }, AbortSignal.timeout(HISTORY_TIMEOUT_MS))
-      const events = page.records.map(record => record.event)
-      const turn = events.findLast(event => event.type === 'turn/end')?.data?.turn
+      // A long turn can push its first presented file outside one page, so page back
+      // until the turn's own start is in hand (or the history ends), then read it.
+      let events = []
+      let beforeSeq
+      let turn
+      for (let pages = 0; pages < DELIVER_PAGES; pages += 1) {
+        const page = await ctx.sessionController.page({
+          address: { kind: 'session', sessionId },
+          ...(beforeSeq !== undefined ? { beforeSeq } : {}),
+          maxMessages: DELIVER_PAGE,
+        }, AbortSignal.timeout(HISTORY_TIMEOUT_MS))
+        const older = page.records.map(record => record.event)
+        events = [...older, ...events]
+        turn = events.findLast(event => event.type === 'turn/end')?.data?.turn
+        if (!Number.isInteger(turn)) return undefined
+        const started = events.some(event => event.type === 'turn/start' && event.data?.turn === turn)
+        if (started || !page.hasMore || older.length === 0) break
+        beforeSeq = older[0]?.seq
+      }
       if (!Number.isInteger(turn)) return undefined
       const files = []
       for (const event of events) {

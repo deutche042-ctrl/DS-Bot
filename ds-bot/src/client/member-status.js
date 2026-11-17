@@ -228,11 +228,11 @@ body[data-ds-dark-theme] .bt-mw-ask{color:#f0b84a}
 .bt-member{display:flex;flex-direction:column;border-radius:12px;animation:bt-rise .18s ease-out backwards}
 .bt-member-row{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 8px;border-radius:12px;transition:background-color .12s ease}
 .bt-member-row:hover{background:var(--bt-hover)}
-.bt-member-open{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:8px 0;border:0;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
+.bt-member-open{flex:none;display:flex;align-items:center;padding:8px 0;border:0;background:none;color:var(--bt-ink);font:inherit;text-align:left;cursor:pointer}
 .bt-member-open>.bt-mark{flex:none}
-.bt-member-text{display:flex;flex-direction:column;min-width:0;gap:1px}
+.bt-member-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .bt-member-line{display:flex;align-items:center;gap:6px;min-width:0}
-.bt-member-name{min-width:0;font-size:14px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-radius:4px}
+.bt-member-name{min-width:0;font:inherit;font-size:14px;line-height:20px;padding:0;border:0;background:none;color:inherit;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;border-radius:4px}
 .bt-member-name:hover{color:var(--bt-ink);text-decoration:underline;text-underline-offset:2px}
 .bt-member-name:focus-visible{outline:2px solid var(--bt-accent);outline-offset:1px}
 .bt-member-line>.bt-tag{font-size:11px;line-height:15px;padding:0 5px}

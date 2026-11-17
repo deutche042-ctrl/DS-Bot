@@ -65,9 +65,11 @@ function scanReplies(text, start, replies) {
 
 // A member's messages in a row, as one block under its name: what it says while it
 // works comes one message at a time. A block carries the last message's time and run.
-export function stackReplies(replies) {
+// `index` is the row's place in the round's own reply list: the chat builds reaction
+// keys from it, so it must not count the rows a caller dropped first.
+function stackItems(entries) {
   const items = []
-  replies.forEach((reply, index) => {
+  entries.forEach(({ reply, index }) => {
     const last = items.at(-1)
     if (reply.kind === undefined && last?.reply.kind === undefined && last?.reply.botId === reply.botId
       && last.claims === undefined && (last.changes === undefined
@@ -95,6 +97,10 @@ export function stackReplies(replies) {
   return items
 }
 
+export function stackReplies(replies) {
+  return stackItems(replies.map((reply, index) => ({ reply, index })))
+}
+
 // Whether a row ends the work episode a working row opened for its member: it posted,
 // finished, stopped, paused for the user, or failed after it.
 const endsWorkEpisode = reply => reply.kind === undefined
@@ -108,14 +114,17 @@ export function drawnReplies(replies) {
   const kept = []
   for (let index = 0; index < replies.length; index += 1) {
     const reply = replies[index]
-    if (reply?.kind !== 'working') { kept.push(reply); continue }
+    if (reply?.kind !== 'working') { kept.push({ reply, index }); continue }
     const botId = reply.botId
     // Only a row after this one can end the episode it opens; an earlier post of the
     // same member says nothing about work that started later.
     if (replies.slice(index + 1).some(later => later?.botId === botId && endsWorkEpisode(later))) continue
     const last = kept.at(-1)
-    if (last?.kind === 'working' && last.botId === botId) kept[kept.length - 1] = { ...last, starts: (last.starts ?? 1) + 1 }
-    else kept.push(reply)
+    if (last?.reply.kind === 'working' && last.reply.botId === botId) {
+      kept[kept.length - 1] = { ...last, reply: { ...last.reply, starts: (last.reply.starts ?? 1) + 1 } }
+    } else kept.push({ reply, index })
   }
-  return stackReplies(kept)
+  // The index stays the one in the round's own list, not this filtered list: reaction
+  // keys are built from it, and a dropped work-start must not shift them.
+  return stackItems(kept)
 }
