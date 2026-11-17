@@ -330,7 +330,18 @@ export async function importTeam({ from, to, workspace, profile, dsh, signal, le
 async function copyThroughStage({ found, from, to, workspace, profile, dsh, signal, stage, leaveRegenerable, skipWork, seen }) {
   const oldBot = join(from, 'bot')
   signal?.throwIfAborted()
-  await cpSeen(oldBot, join(stage, 'bot'), { recursive: true, seen, filter: path => !LEFT_BEHIND.has(relative(oldBot, path).split(/[\\/]/u)[0]) })
+  // phone.json holds this computer's relay identity and its paired phones. A copy would
+  // make this home a second host with the same identity, and the Relay Server then
+  // replaces one connection with the other for ever; the imported home makes its own.
+  await cpSeen(oldBot, join(stage, 'bot'), {
+    recursive: true,
+    seen,
+    filter: path => {
+      const rel = relative(oldBot, path)
+      if (rel === '') return true
+      return rel !== 'phone.json' && !LEFT_BEHIND.has(rel.split(/[\\/]/u)[0])
+    },
+  })
   const team = readJson(join(stage, 'bot', 'state.json'))
   // The new data location registers its own team workspace. A DSH Agent's Sessions do not move
   // to a fresh part, so they would go on working in the old team folder in the user's DSH home.

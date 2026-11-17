@@ -1,7 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native'
 import { useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Dimensions, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as SecureStore from 'expo-secure-store'
 import { onPrefsChange, readPrefs } from '../store.ts'
@@ -41,7 +41,7 @@ function DrawerContent() {
   const [searching, setSearching] = useState(false)
   const [query, setQuery] = useState('')
   const [newOpen, setNewOpen] = useState(false)
-  const create = (screen: 'NewBot' | 'NewGroup') => { setNewOpen(false); drawer.close(); navigation.navigate(screen) }
+  const create = (screen: 'NewBot' | 'NewGroup') => { setNewOpen(false); drawer.closeNow(); navigation.navigate(screen) }
   // The chat on screen is marked in the list, as the desktop marks its open chat. The
   // drawer sits outside the navigator, so it follows the container's own state.
   const [current, setCurrent] = useState<string | undefined>(undefined)
@@ -53,7 +53,9 @@ function DrawerContent() {
   // A chat replaces the one on screen; nothing stays stacked under it. Needs you and
   // Settings slide up over the chat and go back down to it.
   const open = (target: ChatTarget | { kind: 'needs' } | { kind: 'settings' }) => {
-    drawer.close()
+    // Immediate close, not the spring: the drawer must stop being interactive
+    // the moment the other screen starts opening.
+    drawer.closeNow()
     if (target.kind === 'needs') navigation.navigate('Needs')
     else if (target.kind === 'settings') navigation.navigate('Settings')
     else openChat(navigation, target)
@@ -320,7 +322,11 @@ function Inner({ initial }: { initial: ChatTarget | null }) {
 
 export default function ShellB() {
   const { p } = useTheme()
-  const width = Math.min(Dimensions.get('window').width * 0.85, 340)
+  // The closed drawer rests one panel width offscreen, so the width must follow the
+  // window. A width captured once leaves that offset stale after a rotation and parks
+  // the panel mid-screen (#RTL).
+  const { width: windowWidth } = useWindowDimensions()
+  const width = Math.min(windowWidth * 0.85, 340)
   // Render the navigator only once the saved chat is known, so it can start on it.
   const [saved, setSaved] = useState<ChatTarget | null | undefined>(undefined)
   useEffect(() => {

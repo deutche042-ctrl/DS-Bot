@@ -101,6 +101,8 @@ export const DE = {
   // Sidebar and account menu
   'Bot list': 'Bot-Liste',
   'Setting up your Main Bot…': 'Dein Haupt-Bot wird eingerichtet…',
+  'Your Bots will swim here': 'Deine Bots schwimmen hier',
+  'Mention {name}': '{name} erwähnen',
   'The Bot team could not start. The engine’s startup output — its console, or the app’s startup error box — has the cause.': 'Das Bot-Team konnte nicht starten. Die Ursache steht in der Startausgabe der Engine – in ihrer Konsole oder im Startfehlerfenster der App.',
   'The Bot team could not start. {error}. The engine’s startup output — its console, or the app’s startup error box — has the cause.': 'Das Bot-Team konnte nicht starten. {error}. Die Ursache steht in der Startausgabe der Engine – in ihrer Konsole oder im Startfehlerfenster der App.',
   'Automation tasks': 'Automatisierungsaufgaben',
@@ -816,6 +818,7 @@ export const DE = {
   // Bot exchange
   'Bot exchange': 'Bot-Austausch',
   'Bot exchange transcript': 'Protokoll des Bot-Austauschs',
+  'Open bot exchange': 'Bot-Austausch öffnen',
   'No messages yet': 'Noch keine Nachrichten',
   'Close Chat': 'Schließen',
   'Show all · {count} characters': 'Alles anzeigen · {count} Zeichen',
@@ -1389,6 +1392,8 @@ export const DE = {
   'Its group conversation could not open, so it starts a new one next time': 'Seine Gruppensitzung konnte nicht geöffnet werden; beim nächsten Mal wird eine neue gestartet',
   // The composer's +
   'Pasted text · {count} characters': 'Eingefügter Text · {count} Zeichen',
+  // A draft kept while its chat is off the screen (#1248)
+  'The files in this draft could not be kept across chats': 'Die Dateien in diesem Entwurf konnten nicht über Chats hinweg behalten werden',
   'Put back': 'Zurückholen',
   'Put back into the box': 'Zurück ins Eingabefeld',
   'Remove pasted text': 'Eingefügten Text entfernen',

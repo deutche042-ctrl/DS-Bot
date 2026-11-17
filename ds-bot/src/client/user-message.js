@@ -6,7 +6,7 @@ import { BotMark } from './mark.js'
 import { CheckIcon, CopyIcon } from './icons.js'
 import { dateLocale, t } from './i18n.js'
 import { noHover } from './motion.js'
-import { clockLabel, messageClock } from './text.js'
+import { clockLabel, isRelayContext, messageClock } from './text.js'
 import { useFold } from './fold.js'
 
 // -------------------------------------------------------------------------
@@ -192,6 +192,9 @@ function HostContent({ data, prepared, shown, folded, control, loadImage, render
 export function UserMessageCell({ node, sessionId, useRoster, actions, renderMessageImages, openFile, openSkill, loadImage, renderFactorySlot }) {
   const roster = useRoster(value => value)
   const data = node.data ?? {}
+  // A scheduled task and a Bot-to-Bot relay are model context, not a message the user
+  // sent. Keep them out even if a host release surfaces their source as a user message.
+  if (data.source?.kind === 'schedule' || isRelayContext(data)) return null
   const prepared = projects ? undefined : hostContent(data.content, data)
   const text = prepared?.text ?? contentParts(data.content).text
   const steering = node.kind === 'steering'

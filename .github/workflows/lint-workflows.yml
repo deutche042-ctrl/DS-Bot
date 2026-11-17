@@ -1,0 +1,24 @@
+name: Lint workflows
+
+# A broken workflow only shows itself when it is needed. actionlint reads every file in
+# .github/workflows and checks the expressions, the event inputs and the shell.
+on:
+  push:
+    paths: ['.github/workflows/**']
+  pull_request:
+    paths: ['.github/workflows/**']
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: raven-actions/actionlint@v2
+        with:
+          # The workflows do not use shellcheck or pyflakes-specific syntax.
+          shellcheck: false
+          pyflakes: false

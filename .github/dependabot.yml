@@ -1,0 +1,57 @@
+version: 2
+updates:
+  # The Bot plugin, its test harness, the phone app, the phone link and the desktop app
+  # are separate npm trees.
+  - package-ecosystem: npm
+    directory: /ds-bot/dev/harness
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      dsh:
+        patterns:
+          - '@deepseek-ai/*'
+  - package-ecosystem: npm
+    directory: /ds-bot
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dsh:
+        patterns:
+          - '@deepseek-ai/*'
+      dev:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      expo:
+        patterns:
+          - 'expo*'
+          - '@expo/*'
+      react-native:
+        patterns:
+          - 'react-native*'
+          - '@react-native*'
+
+  - package-ecosystem: npm
+    directory: /link
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

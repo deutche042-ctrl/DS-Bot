@@ -101,6 +101,8 @@ export const KO = {
   // Sidebar and account menu
   'Bot list': 'Bot 목록',
   'Setting up your Main Bot…': '메인 Bot을 설정하는 중…',
+  'Your Bots will swim here': 'Bot들이 여기에서 헤엄칩니다',
+  'Mention {name}': '{name} 님 멘션',
   'The Bot team could not start. The engine’s startup output — its console, or the app’s startup error box — has the cause.': 'Bot 팀을 시작할 수 없습니다. 엔진의 시작 출력(콘솔 또는 앱의 시작 오류 창)에서 원인을 확인할 수 있습니다.',
   'The Bot team could not start. {error}. The engine’s startup output — its console, or the app’s startup error box — has the cause.': 'Bot 팀을 시작할 수 없습니다. {error}. 엔진의 시작 출력(콘솔 또는 앱의 시작 오류 창)에서 원인을 확인할 수 있습니다.',
   'Automation tasks': '자동화 작업',
@@ -816,6 +818,7 @@ export const KO = {
   // Bot exchange
   'Bot exchange': 'Bot 간 대화',
   'Bot exchange transcript': 'Bot 간 대화 기록',
+  'Open bot exchange': 'Bot 간 대화 열기',
   'No messages yet': '아직 메시지 없음',
   'Close Chat': '닫기',
   'Show all · {count} characters': '전체 표시 · {count}자',
@@ -1389,6 +1392,8 @@ export const KO = {
   'Its group conversation could not open, so it starts a new one next time': '그룹 대화 세션을 열 수 없어 다음번에 새 세션을 시작합니다',
   // The composer's +
   'Pasted text · {count} characters': '붙여넣은 텍스트 · {count}자',
+  // A draft kept while its chat is off the screen (#1248)
+  'The files in this draft could not be kept across chats': '이 임시 저장의 파일은 대화 간에 유지되지 못했습니다',
   'Put back': '되돌리기',
   'Put back into the box': '입력창에 되돌리기',
   'Remove pasted text': '붙여넣은 텍스트 삭제',

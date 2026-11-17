@@ -1,0 +1,214 @@
+name: Build apps
+
+# Builds the two packages this fork ships for Android and Linux. It runs on demand only:
+# the desktop app's installer is produced by the upstream release workflow, and this one
+# keeps the phone APK and a repacked AppImage for real-device checks.
+#
+# The Android APK is signed with the debug key unless the ANDROID_* secrets are set, so a
+# fork builds without secrets. That APK is for testing, not for the Play Store.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: What to build
+        type: choice
+        default: all
+        options:
+          - all
+          - apk
+          - appimage
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: ds-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the phone link's packages
+        run: npm ci --no-fund --no-audit --prefix ../link
+      - run: npm ci --no-fund --no-audit
+      - run: npm run harness
+      - run: npm test
+      - name: The committed client.js matches src/client
+        run: node scripts/build-client.mjs --check
+      - run: npm run build
+      - run: npm run lint
+      - name: Typecheck and test the phone app
+        working-directory: mobile
+        run: |
+          npm ci --no-fund --no-audit
+          npm run typecheck
+          npm test
+
+  apk:
+    name: Android APK
+    needs: gate
+    if: ${{ inputs.target == 'all' || inputs.target == 'apk' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install the phone link's packages
+        run: npm ci --no-fund --no-audit --prefix ../link
+      - run: npm ci --no-fund --no-audit
+      - run: npx expo prebuild --platform android --no-install
+      - name: Build the APK
+        # Without ANDROID_KEYSTORE_BASE64 the generated build.gradle falls back to the
+        # debug key, which is what a fork without secrets gets.
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+            export DSBOT_ANDROID_KEYSTORE="$RUNNER_TEMP/upload.jks"
+            export DSBOT_ANDROID_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
+            export DSBOT_ANDROID_KEY_ALIAS="$KEY_ALIAS"
+            if [ -n "$KEY_PASSWORD" ]; then export DSBOT_ANDROID_KEY_PASSWORD="$KEY_PASSWORD"; fi
+          fi
+          (cd android && ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)
+          rm -f "$RUNNER_TEMP/upload.jks"
+          version="$(node -p "require('../ds-bot/package.json').version")"
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/DS-Bot-$version-android.apk"
+      - name: Check the APK
+        run: |
+          apk="$(ls dist/DS-Bot-*-android.apk)"
+          bytes="$(stat -c%s "$apk")"
+          echo "APK: $apk ($((bytes / 1024 / 1024)) MiB)"
+          # The two device architectures only: an x86 emulator build doubles the size.
+          if unzip -l "$apk" | grep -Eq 'lib/(x86|x86_64)/'; then
+            echo "::error::$apk contains x86 simulator binaries."
+            exit 1
+          fi
+          if [ "$bytes" -gt $((60 * 1024 * 1024)) ]; then
+            echo "::error::$apk is larger than the 60 MiB limit."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DS-Bot-android-apk
+          path: mobile/dist/DS-Bot-*-android.apk
+          retention-days: 14
+          compression-level: 9
+          if-no-files-found: error
+
+  appimage:
+    name: Linux AppImage
+    needs: gate
+    if: ${{ inputs.target == 'all' || inputs.target == 'appimage' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the phone link's packages
+        run: npm ci --no-fund --no-audit --prefix ../link
+      - name: Install the squashfs tools
+        # electron-builder ships its own mksquashfs, but the repack below needs the
+        # distro's unsquashfs to verify the new payload.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
+      - name: Build the client
+        working-directory: ds-bot
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+      - run: npm ci --no-fund --no-audit
+      - run: node scripts/seed-electron-checksums.mjs
+      - run: npm run dist
+      - name: Repack the AppImage with xz
+        # electron-builder writes the AppImage with gzip, which leaves roughly a third of
+        # the file as compressor overhead. The AppImage is a runtime followed by one
+        # squashfs image, so replacing only that image keeps the runtime intact.
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          app="dist-pack/DS-Bot-$version-linux-x86_64.AppImage"
+          test -f "$app"
+          chmod +x "$app"
+          offset="$("$app" --appimage-offset)"
+          case "$offset" in ''|*[!0-9]*) echo "::error::no AppImage offset"; exit 1 ;; esac
+          echo "runtime prefix: $offset bytes"
+          rm -rf squashfs-root
+          "$app" --appimage-extract >/dev/null
+          # Source maps are only useful in a checkout, and every Chromium locale pack but
+          # the app's own two is dead weight. Only *.pak files may go: other packages keep
+          # JavaScript under a directory also called locales (zod/v4/locales), and
+          # deleting those left the host unable to start.
+          find squashfs-root -name '*.map' -delete
+          find squashfs-root -type d -name locales -print0 | while IFS= read -r -d '' dir; do
+            find "$dir" -maxdepth 1 -type f -name '*.pak' ! -name 'ar.pak' ! -name 'en-US.pak' -delete
+          done
+          test -f squashfs-root/resources/app/node_modules/zod/v4/locales/index.js
+          if [ -d squashfs-root/usr/share/locale ]; then
+            find squashfs-root/usr/share/locale -mindepth 1 -maxdepth 1 -type d ! -name ar ! -name 'en*' -exec rm -rf {} +
+          fi
+          mksquashfs squashfs-root "$RUNNER_TEMP/app.squashfs" -comp xz -b 1M -Xdict-size 100% -all-root -noappend -quiet
+          head -c "$offset" "$app" > "$RUNNER_TEMP/DS-Bot.AppImage"
+          cat "$RUNNER_TEMP/app.squashfs" >> "$RUNNER_TEMP/DS-Bot.AppImage"
+          chmod +x "$RUNNER_TEMP/DS-Bot.AppImage"
+          mv "$RUNNER_TEMP/DS-Bot.AppImage" "$app"
+      - name: Check the repacked AppImage
+        run: |
+          app="$(ls dist-pack/DS-Bot-*-linux-x86_64.AppImage)"
+          bytes="$(stat -c%s "$app")"
+          echo "AppImage: $app ($((bytes / 1024 / 1024)) MiB)"
+          if [ "$bytes" -gt $((280 * 1024 * 1024)) ]; then
+            echo "::error::$app is larger than the 280 MB limit."
+            exit 1
+          fi
+          # The runtime still reports its payload offset and the payload is a readable
+          # squashfs, so the file was not truncated or misaligned.
+          offset="$("$app" --appimage-offset)"
+          unsquashfs -o "$offset" -s "$app" >/dev/null
+          # The app must still start from the payload the repacked file carries. Unpack that
+          # file again and run the executable beside its resources: check-packed reads the
+          # resources next to the binary, which an AppImage mount does not have.
+          app_path="$PWD/$app"
+          check="$RUNNER_TEMP/repack-check"
+          rm -rf "$check" && mkdir -p "$check"
+          (cd "$check" && "$app_path" --appimage-extract >/dev/null)
+          test -x "$check/squashfs-root/dsbot"
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          xvfb-run -a node scripts/check-packed.mjs "$check/squashfs-root/dsbot"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DS-Bot-linux-appimage
+          path: app/dist-pack/DS-Bot-*-linux-x86_64.AppImage
+          retention-days: 14
+          compression-level: 9
+          if-no-files-found: error

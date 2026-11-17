@@ -3,7 +3,8 @@ import { ActivityIndicator, Dimensions, FlatList, KeyboardAvoidingView, Linking,
 import { useIsFocused, useNavigation } from '@react-navigation/native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Haptics from 'expo-haptics'
-import { downloadFile } from '../team/file-download.ts'
+import { downloadFile, downloadUrlFile } from '../team/file-download.ts'
+import { fileRouteOf } from '../team/file-cap.ts'
 import * as Sharing from 'expo-sharing'
 import type { Approval, Bot, Question, Room } from '../connection.ts'
 import { createChatCache } from '../team/chat-cache.ts'
@@ -263,26 +264,33 @@ export function ChatView({ bot, room, header, onMissing }: { bot?: Bot; room?: R
   const [readerTitle, setReaderTitle] = useState<string | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   const [photos, setPhotos] = useState<{ sessionId: string; refs: ImageRef[]; index: number } | null>(null)
-  // Save hands the file to the phone: the host sends its bytes, the app writes them
-  // to a cache file, and the system share sheet lets Android put it in Downloads or
-  // open it in a viewer. A refusal names the reason in the same line as file errors.
-  const saveFile = useCallback((file: FileRef) => {
-    setFileError(null)
+  // Save and share hand the file to the phone: the host sends its bytes (a web-linked
+  // file comes from the web), the app writes them to a cache file, and the system share
+  // sheet saves it into a folder or hands it to another app. Host files travel in
+  // chunks, so hello.maxFileBytes (a one-answer whole read) does not limit them.
+  const deliverFile = useCallback(async (file: FileRef) => {
     const targetSession = file.sessionId ?? sessionId
+    if (fileRouteOf(file) === 'url') {
+      const saved = await downloadUrlFile(file.url!, file.name)
+      if (!(await Sharing.isAvailableAsync())) throw new Error(t('Saving to the device is not available on this phone'))
+      await Sharing.shareAsync(saved.uri, { mimeType: saved.mime, dialogTitle: saved.name })
+      return
+    }
     const payload = file.attachmentId !== undefined
       ? { sessionId: targetSession, attachmentId: file.attachmentId }
       : { sessionId: targetSession, seq: file.seq, index: file.index }
-    void (async () => {
-      try {
-        const saved = await downloadFile(call, payload)
-        if (!(await Sharing.isAvailableAsync())) throw new Error(t('Saving to the device is not available on this phone'))
-        await Sharing.shareAsync(saved.uri, { mimeType: saved.mime, dialogTitle: saved.name })
-      } catch (failure) {
-        const msg = (failure as { message?: string })?.message
-        setFileError(msg ?? t('Could not save this file'))
-      }
-    })()
+    const saved = await downloadFile(call, payload)
+    if (!(await Sharing.isAvailableAsync())) throw new Error(t('Saving to the device is not available on this phone'))
+    await Sharing.shareAsync(saved.uri, { mimeType: saved.mime, dialogTitle: saved.name })
   }, [call, sessionId])
+  const saveFile = useCallback((file: FileRef) => {
+    setFileError(null)
+    void deliverFile(file).catch((failure: unknown) => setFileError((failure as { message?: string })?.message ?? t('Could not save this file')))
+  }, [deliverFile])
+  const shareFile = useCallback((file: FileRef) => {
+    setFileError(null)
+    void deliverFile(file).catch((failure: unknown) => setFileError((failure as { message?: string })?.message ?? t('Could not share this file')))
+  }, [deliverFile])
   const openFile = useCallback((file: { name: string; attachmentId?: string }) => {
     void call('file-text', { file }).then(result => {
       const read = result as { text?: string; truncated?: boolean } | string
@@ -427,10 +435,10 @@ export function ChatView({ bot, room, header, onMissing }: { bot?: Bot; room?: R
       <ErrorBoundary inline>
         <Item stamp={row.stamp} author={inRoom && item.botId !== undefined ? botsById.get(item.botId) : undefined} admin={inRoom && item.botId !== undefined && item.botId === admin}
           item={item} p={p} flat={flat} maxWidth={item.kind === 'bot' || item.kind === 'post' ? botMax : userMax} inRoom={inRoom} sessionId={sessionId}
-          onLongPress={setMenuText} onOpenFile={openFile} onSaveFile={saveFile} onRetry={retry} open={openSteps[skey]} onToggle={toggleOf(skey)} />
+          onLongPress={setMenuText} onOpenFile={openFile} onSaveFile={saveFile} onShareFile={shareFile} onRetry={retry} open={openSteps[skey]} onToggle={toggleOf(skey)} />
       </ErrorBoundary>
     )
-  }, [inRoom, botsById, admin, p, flat, botMax, userMax, sessionId, openFile, retry, openSteps])
+  }, [inRoom, botsById, admin, p, flat, botMax, userMax, sessionId, openFile, saveFile, shareFile, retry, openSteps])
 
   const empty = page !== null && rows.length === 0
   return (
@@ -499,7 +507,7 @@ export function ChatView({ bot, room, header, onMissing }: { bot?: Bot; room?: R
       <Dock question={question} sessionId={sessionId} approvals={approvals} secrets={secrets} connectorRequests={connectorRequests} botName={bot?.name} onOpenConnector={connectorId => { if (connectorCanConnectOnMobile(connectorId)) navigation.navigate('Settings', { screen: 'Connectors', params: { focusId: connectorId }, initial: false }) }} btw={btw} handoff={browserHold} view={team?.views?.[sessionId]} call={call} p={p} expanded={expandedKey} onExpand={setExpandedKey} />
       {fileError ? <Text style={[type.small, { color: p.danger, textAlign: 'center', marginBottom: 4 }]} accessibilityRole="alert">{fileError}</Text> : null}
       {page !== null && loadError !== null ? <Text style={[type.small, { color: p.danger, textAlign: 'center', marginBottom: 4, marginHorizontal: 16 }]} accessibilityRole="alert">{loadError}</Text> : null}
-      <Composer name={bot?.name ?? room?.name ?? ''} running={running} canStop={canStop} canAttach={hello?.capabilities?.includes('send-images') === true} onSend={send} onStop={stop} p={p} />
+      <Composer chatKey={room ? `room:${room.id}` : `bot:${bot?.id ?? id}`} name={bot?.name ?? room?.name ?? ''} running={running} canStop={canStop} canAttach={hello?.capabilities?.includes('send-images') === true} onSend={send} onStop={stop} p={p} />
       <Actions visible={menuText !== null} text={menuText ?? ''} p={p}
         onClose={() => setMenuText(null)}
         onSelect={() => { setReaderTitle(null); setReaderText(menuText); setMenuText(null) }} />

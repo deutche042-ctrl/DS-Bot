@@ -15,11 +15,12 @@
 // word, and where the rest is. Input that arrives meanwhile waits and moves along.
 // read_own_chat searches every part, the condensed messages included.
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { openTurnAt } from './btw.js'
 import { HANDOFF_ACK, HISTORY_TIMEOUT_MS, REPLY_KIND, SOURCE_KIND } from './constants.js'
 import { assembleLlmStream } from './models.js'
-import { parseReplies, relayRange, stackReplies } from '../shared/group-replies.js'
+import { drawnReplies, parseReplies, relayRange } from '../shared/group-replies.js'
 import { CHECKPOINT_PROMPT, STEWARD_SYSTEM, checkpointCount, checkpointTail, checkpointTailNote, checkpointText, linesFor, parseDecision, stewardRequest } from './steward.js'
 import { RESUME_DELAY_MS } from './resume.js'
 import { clip, createClock, escapeRegExp, estimateTokens, reminderPrompts, splitRef, textOf } from './text.js'
@@ -1778,13 +1779,13 @@ export function install(rt) {
         const range = relayRange(text)
         const room = range === undefined ? undefined : rt.roomOf(partId) ?? rt.roomOf(rt.pastOwners.get(partId)?.roomId)
         const replies = range === undefined ? parseReplies(text).replies : room === undefined ? [] : rt.groupRows(room.id, range.from, range.to, range.anchor)
-        for (const { reply, texts, time, duration, claims, changes } of stackReplies(replies)) {
+        for (const { reply, texts, time, duration, claims, changes, files } of drawnReplies(replies)) {
           // Reply rows take the reply's own time, and no seq: several rows share
           // the result event's seq, which the chat keys a post's anchor by.
           const item = { time: time ?? reply.time ?? event.time }
           if (turn !== undefined) item.turn = turn
           if (reply.kind === 'user') items.push({ kind: 'user', text: reply.text, ...(reply.via ? { via: reply.via } : {}), ...item })
-          else if (reply.kind === undefined) items.push({ kind: 'post', botId: reply.botId ?? null, name: reply.name ?? null, texts, ...(claims === undefined ? {} : { claims }), ...(changes === undefined ? {} : { changes }), ...item, ...(duration === undefined ? {} : { duration }) })
+          else if (reply.kind === undefined) items.push({ kind: 'post', botId: reply.botId ?? null, name: reply.name ?? null, texts, ...(claims === undefined ? {} : { claims }), ...(changes === undefined ? {} : { changes }), ...(files === undefined ? {} : { files }), ...item, ...(duration === undefined ? {} : { duration }) })
           else items.push({ kind: 'relay', reply, ...item })
         }
         continue
@@ -1815,6 +1816,7 @@ export function install(rt) {
           name: source.senderName ?? null,
           ...(source.claims === undefined ? {} : { claims: source.claims }),
           ...(source.changes === undefined ? {} : { changes: source.changes }),
+          ...(Array.isArray(source.delivered) && source.delivered.length > 0 ? { files: source.delivered } : {}),
           text: textOf(content).replace(/^\[Group post from (?:[^\r\n]*\]\r?\n|[^\]\r\n]*\])/, ''),
           ...(file ? { file, length: source.length } : {}),
           time: event.time,
@@ -1835,6 +1837,53 @@ export function install(rt) {
       ]
     }
     return items
+  }
+
+  // The files the turn that last ended in a Session presented, as refs the file-download
+  // endpoint resolves, in the shape the delivered-file rows carry. A member's group row
+  // carries them, so the group chat can save what its members delivered the way their
+  // own chat rows do (#975). Undefined when the tail holds no presented file for the
+  // turn that ended, or the page cannot be read.
+  const DELIVER_PAGE = 80
+  const DELIVER_PAGES = 10
+  async function turnDeliverables(sessionId) {
+    if (typeof sessionId !== 'string' || sessionId === '') return undefined
+    try {
+      // A long turn can push its first presented file outside one page, so page back
+      // until the turn's own start is in hand (or the history ends), then read it.
+      let events = []
+      let beforeSeq
+      let turn
+      for (let pages = 0; pages < DELIVER_PAGES; pages += 1) {
+        const page = await ctx.sessionController.page({
+          address: { kind: 'session', sessionId },
+          ...(beforeSeq !== undefined ? { beforeSeq } : {}),
+          maxMessages: DELIVER_PAGE,
+        }, AbortSignal.timeout(HISTORY_TIMEOUT_MS))
+        const older = page.records.map(record => record.event)
+        events = [...older, ...events]
+        turn = events.findLast(event => event.type === 'turn/end')?.data?.turn
+        if (!Number.isInteger(turn)) return undefined
+        const started = events.some(event => event.type === 'turn/start' && event.data?.turn === turn)
+        if (started || !page.hasMore || older.length === 0) break
+        beforeSeq = older[0]?.seq
+      }
+      if (!Number.isInteger(turn)) return undefined
+      const files = []
+      for (const event of events) {
+        if (event.type !== 'deliverables/presented' || event.data?.turn !== turn) continue
+        const presented = Array.isArray(event.data.files) ? event.data.files.filter(file => typeof file?.path === 'string') : []
+        for (const [index, file] of presented.entries()) {
+          // The size rides the ref while the file is still there, so the card shows it
+          // without a save; the download re-checks the file before it serves it.
+          const info = await stat(file.path).catch(() => undefined)
+          files.push({ name: String(file.path).split(/[\\/]/).pop() || 'file', sessionId, seq: event.seq, index, ...(info?.isFile() === true ? { bytes: info.size } : {}) })
+        }
+      }
+      return files.length > 0 ? files : undefined
+    } catch {
+      return undefined
+    }
   }
 
   async function partPage(parts, index, cursor, steps = false) {
@@ -1976,21 +2025,16 @@ export function install(rt) {
   const previewText = item => String(item.text ?? item.title ?? item.texts?.join(' ') ?? '').replace(/\s+/g, ' ').trim()
   const applyTail = (sessionId, item) => tails.set(sessionId, { lastAt: item.time ?? 0, preview: previewText(item) })
   const fillTail = async sessionId => {
-    // Newest page back until a row shows; chats almost always have it on page one.
+    // One page is enough for a row in almost every chat. Paging back further turns a
+    // cold start on a large team into a full session-store scan (ported from Rory-X).
     try {
-      let beforeSeq
-      for (let pages = 0; pages < 10; pages += 1) {
-        const page = await ctx.sessionController.page({
-          address: { kind: 'session', sessionId },
-          ...(beforeSeq !== undefined ? { beforeSeq } : {}),
-          maxMessages: EARLIER_PAGE,
-        }, AbortSignal.timeout(HISTORY_TIMEOUT_MS))
-        const events = page.records.map(record => record.event)
-        const last = [...displayItems(sessionId, events)].reverse().find(item => PREVIEWABLE.has(item.kind))
-        if (last !== undefined) { applyTail(sessionId, last); return }
-        if (!page.hasMore || events.length === 0) break
-        beforeSeq = events[0]?.seq
-      }
+      const page = await ctx.sessionController.page({
+        address: { kind: 'session', sessionId },
+        maxMessages: EARLIER_PAGE,
+      }, AbortSignal.timeout(HISTORY_TIMEOUT_MS))
+      const events = page.records.map(record => record.event)
+      const last = [...displayItems(sessionId, events)].reverse().find(item => PREVIEWABLE.has(item.kind))
+      if (last !== undefined) { applyTail(sessionId, last); return }
       tails.set(sessionId, { lastAt: 0, preview: '' })
     } catch { tails.set(sessionId, { lastAt: 0, preview: '' }) }
   }
@@ -2115,5 +2159,5 @@ export function install(rt) {
     return true
   }
 
-  Object.assign(rt, { clock, partsOf, partsOfThread, historyEntry, partLines, noteText, earlierPage, chatPage, displayItems, applySteps, followFolder, followEngine, heldBack, newPart, switchPart, sessionTokens: session => tokensOf(session), switchJobs: () => switches.values() })
+  Object.assign(rt, { clock, partsOf, partsOfThread, historyEntry, partLines, noteText, earlierPage, chatPage, displayItems, turnDeliverables, applySteps, followFolder, followEngine, heldBack, newPart, switchPart, sessionTokens: session => tokensOf(session), switchJobs: () => switches.values() })
 }

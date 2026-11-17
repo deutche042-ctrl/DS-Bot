@@ -301,7 +301,7 @@ test('each sub-call shows its own state, not its program\'s', () => {
   assert.equal(shown(program([{ ...call('create_bot', 'program:ptc:1', { args: { name: 'Writer' }, running: true }) }])), '')
   const failed = call('message_bot', 'program:ptc:1', { args: { to: 'Writer' }, isError: true })
   assert.match(shown(program([failed])), /Couldn't message Writer/)
-  assert.match(shown(program([call('message_bot', 'program:ptc:1', { args: { to: 'Writer' } })], { isError: true })), /^Messaged/)
+  assert.match(shown(program([call('message_bot', 'program:ptc:1', { args: { to: 'Writer' } })], { isError: true })), /^Bot exchange.*Messaged/)
   const refused = call('post_to_group', 'program:ptc:1', { content: 'No group is called "Nope".', isError: true })
   const posted = call('post_to_group', 'program:ptc:2', { content: 'Posted in "Ops".' })
   assert.match(shown(program([refused, posted])), /Couldn't post in the group.*Posted in.*Ops/)
@@ -851,7 +851,7 @@ test('a goal round draws nothing, while another unknown trigger keeps its event 
     actions: {},
   }))
   assert.ok(emptied(trigger({ kind: 'goal', goalId: 'goal-1', revision: 1, round: 1 })))
-  assert.match(text(trigger({ kind: 'webhook' })), /<goal_round>Keep going/)
+  assert.match(text(trigger({ kind: 'webhook' })), /^Update$/)
 })
 
 // #212: the chat hands a trigger its event (seq, content, source) but no turn, so every post
@@ -1198,6 +1198,45 @@ test('an attachment starts the clipboard write inside its click before loading t
   assert.deepEqual(copiedTexts, [inner])
 })
 
+// #975: the files a member's turn delivered show under its group reply as cards.
+test('a group reply draws the delivered-file cards its row carries', () => {
+  const files = [{ sessionId: 'room', seq: 9, index: 0, name: 'notes.md', bytes: 11 }]
+  const out = show(call('group_relay', 'direct', { content: { replies: [{ botId: 'writer', text: 'Done.', files }] } }), { sessionId: 'room' })
+  assert.deepEqual(findAll(out, node => node.props?.className === 'bt-dfile-name').map(text), ['notes.md'])
+  assert.equal(findAll(out, node => node.props?.className === 'bt-soft bt-soft-sm').length, 1)
+})
+
+// #1627: a bubble that repeats the one right before it draws nothing, while every
+// bubble keeps its place so reactions do not move.
+test('a repeated bubble keeps its place and draws hidden', () => {
+  const toggles = []
+  const render = texts => expand(Bubbles({
+    texts, roster: team(), selfId: chief.id, sessionId: chief.id, msgKey: 'm1',
+    actions: { toggleReaction: (...args) => toggles.push(args) },
+    useUi: select => select({ reactions: { m1: { 0: ['👍'], 2: ['❤️'], 3: ['😂'] } } }),
+  }))
+  const rows = out => findAll(out, node => node.props?.className === 'bt-msg')
+  const rowText = node => text(findAll(node, entry => entry.props?.className === 'bt-bubble')[0])
+  const hidden = node => node.props?.['data-dup'] === ''
+  const shown = out => rows(out).filter(node => !hidden(node))
+
+  // [a, a, b, a]: the first a and the later a both show; only the repeat beside it goes.
+  const one = render(['a', 'a', 'b', 'a'])
+  assert.deepEqual(rows(one).map(rowText), ['a', 'a', 'b', 'a'])
+  assert.deepEqual(rows(one).map(hidden), [false, true, false, false])
+  assert.deepEqual(shown(one).map(rowText), ['a', 'b', 'a'])
+  // The hidden row keeps its index, so a reaction on b still toggles bubble 2.
+  const reacts = findAll(one, node => node.props?.className === 'bt-react')
+  assert.equal(reacts.length, 3)
+  reacts[1].props.onClick()
+  assert.deepEqual(toggles, [['m1', 2, '❤️']])
+
+  // [a, a, a]: one a shows and the two repeats draw behind it.
+  const all = render(['a', 'a', 'a'])
+  assert.deepEqual(rows(all).map(hidden), [false, true, true])
+  assert.equal(shown(all).length, 1)
+})
+
 test('settled and answered views summarize every outcome cleanly and derive fallback prompts when untitled', () => {
   const expandCard = (Component, props) => expand(h(Component, props))
 
@@ -1292,4 +1331,39 @@ test('settled and answered views summarize every outcome cleanly and derive fall
   assert.equal(text(find(formulaDismissed, node => node.props?.className === 'bt-q-title')), 'Budget: 25%')
   const fallbackPrompt = expandCard(SettledView, { title: '', view: { type: 'stack', children: [] }, closed: 'dismissed' })
   assert.equal(text(find(fallbackPrompt, node => node.props?.className === 'bt-q-title')), 'View')
+})
+
+// A scheduled task prompt is automation metadata, not a chat message. Its task
+// remains in Details → Scheduled tasks.
+test('a scheduled task trigger stays out of the transcript', () => {
+  const out = expand(TriggerCell({
+    node: {
+      key: 'trigger', kind: 'turn-trigger', location: { turn: { turn: 1 } },
+      data: { seq: 9, time: 1, content: text$('reminder_prompt_json: "Check the queue"'), source: { kind: 'schedule' } },
+    },
+    sessionId: chief.id, actions: {},
+    useRoster: select => select(team()), useSessions: select => select({ byId: {} }),
+    useTurnClock: select => select({}), useUi: select => select({ visits: {}, reactions: {} }),
+  }))
+  assert.equal(text(out), '')
+  assert.equal(find(out, node => node.props?.className === 'bt-event'), undefined)
+})
+
+// The exchange is still one click away, but its line no longer competes with the
+// reply for attention.
+test('a Bot-to-Bot line is a compact expandable context row', () => {
+  const out = expand(TriggerCell({
+    node: {
+      key: 'trigger', kind: 'turn-trigger', location: { turn: { turn: 1 } },
+      data: { seq: 9, time: 1, content: text$('[Message from Writer]\nPlease check the draft.'), source: { kind: 'bot', role: 'request', senderSessionId: 'writer' } },
+    },
+    sessionId: chief.id, actions: {},
+    useRoster: select => select(team()), useSessions: select => select({ byId: {} }),
+    useTurnClock: select => select({}), useUi: select => select({ visits: {}, reactions: {} }),
+  }))
+  const details = find(out, node => node.type === 'details')
+  assert.equal(details.props.className, 'bt-event bt-event-quiet')
+  assert.match(text(details), /Bot exchange/)
+  assert.match(text(details), /Writer/)
+  assert.match(text(details), /Please check the draft\./)
 })

@@ -2,7 +2,7 @@ import { createElement as h, Fragment, useEffect, useLayoutEffect, useMemo, useR
 import { createPortal } from 'react-dom'
 import { MarkdownText, writeClipboard } from './dsh-primitives.js'
 import { inkText } from './inks.js'
-import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripToolCallTags, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, reminderPrompts, elapsedLabel, clockLabel, messageClock } from './text.js'
+import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, stripInternalText, stripToolCallTags, isHiddenTurn, isRelayContext, relaysBefore, relayPart, commRunOf, toolName, toolArgs, elapsedLabel, clockLabel, messageClock } from './text.js'
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, GoalIcon, MemoryIcon } from './icons.js'
 import { ChangesCard } from './changes-card.js'
 import { goalEventText } from './goal.js'
@@ -18,7 +18,8 @@ import { mdLabels, t } from './i18n.js'
 import { call } from './api.js'
 import { failureLabel } from './diagnostics.js'
 import { turnReasoning, thinkingStep, opensReply, stepActivity } from './turn-reasoning.js'
-import { parseReplies, relayRange, stackReplies } from '../shared/group-replies.js'
+import { drawnReplies, parseReplies, relayRange } from '../shared/group-replies.js'
+import { FileCards } from './file-card.js'
 import { FOLD_AT, FOLD_HUGE, stripLongNote, useFold } from './fold.js'
 import { ReplyGuide } from './reading.js'
 import { noHover, useViewport, viewBottom } from './motion.js'
@@ -47,6 +48,11 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
     actions.openSession(target)
   }
   const cleaned = texts.map(stripToolCallTags).filter(text => text.trim() !== '')
+  // A bubble whose text repeats the one right before it says nothing the first did not.
+  // Repeated rows stay in place and draw hidden, so reactions keep their indexes; the
+  // live last bubble hides too, which keeps repeated "…" placeholders to one (#1627).
+  const repeats = cleaned.map((text, index) => index > 0 && text === cleaned[index - 1])
+  const lastShown = repeats.lastIndexOf(false)
   const reactions = useUi ? useUi(state => (msgKey ? state.reactions?.[msgKey] ?? null : null)) : null
   return h('div', { className: 'bt-astack', 'data-lead': lead ? '' : undefined, onClickCapture: onClick },
     cleaned.map((text, index) => {
@@ -55,7 +61,8 @@ export function Bubbles({ texts, roster, selfId, actions, streaming, sessionId, 
         key: index, text, index, roster, selfId, actions, sessionId, msgKey, mentions, fold, textInteractionSource,
         picked: msgKey ? reactions?.[index] ?? [] : [],
         live: streaming && last,
-        lead: lead && last ? lead : null,
+        lead: lead && index === lastShown ? lead : null,
+        hidden: repeats[index],
         whole: last ? whole : undefined,
       })
     }),
@@ -94,7 +101,7 @@ const foldArea = (body, code, codeHead, actions) => (code === undefined ? body
     h('pre', { className: 'bt-fold-pre' }, h('code', null, codeHead)),
     h(FoldCodeCopy, { code, actions })))
 
-function Bubble({ text, index, roster, selfId, actions, sessionId, msgKey, mentions, fold, picked, live, lead, whole, textInteractionSource }) {
+function Bubble({ text, index, roster, selfId, actions, sessionId, msgKey, mentions, fold, picked, live, lead, whole, hidden, textInteractionSource }) {
   const { shown, folded, control, code, codeHead } = useFold(text, { limit: fold, whole, live })
   const key = msgKey ? `${msgKey}:${index}` : undefined
   const body = shown === '' ? null : h(MarkdownText, { text: linkMentions(shown, roster.bots, selfId), streaming: live, labels: mdLabels(), variant: 'compact', fileMentions: mentions })
@@ -109,7 +116,7 @@ function Bubble({ text, index, roster, selfId, actions, sessionId, msgKey, menti
   }
   const bubble = useRef(null)
   const area = foldArea(body, code, codeHead, actions)
-  return h('div', { ref: row, className: 'bt-msg', onClick: tapTools },
+  return h('div', { ref: row, className: 'bt-msg', 'data-dup': hidden ? '' : undefined, onClick: tapTools },
     h('div', { className: 'bt-msg-line' },
       lead,
       h('div', { ref: bubble, className: 'bt-bubble', 'data-folded': folded || undefined, 'data-text-interaction-source': textInteractionSource ? '' : undefined },
@@ -270,7 +277,7 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const hidden = Boolean(roster.roomsById[sessionId]) || isHiddenTurn(roster, sessionId, data.turn)
   const texts = groupPart === 'reasoning' ? [] : data.blocks
     .filter(block => block.kind === 'text')
-    .map(block => stripToolCallTags(block.text))
+    .map(block => stripInternalText(stripToolCallTags(block.text)))
     .filter(text => text.trim() !== '')
   const running = data.status === 'running'
   const textInteractionSource = data.status === 'settled' && data.finalNode?.messageId !== undefined
@@ -306,6 +313,9 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
         bots: [sender],
         onOpen: () => { if (sender.id) actions.openExchange(selfId, sender.id) },
         whole: true,
+        quiet: true,
+        summary: t('Bot exchange'),
+        detail: stripHeader(contentText(relay.content)),
       })
     }),
     head ? h(SpeakerHead, { bot: speaker, time: data.time }) : null,
@@ -322,7 +332,18 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
 // `code` in an activity line is the command or path the agent works on.
 const activityParts = line => line.split('`').map((part, index) => (index % 2 === 1 ? h('code', { key: index }, part) : part))
 
-function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
+function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false, quiet = false, summary, detail }) {
+  const names = bots.map(bot => bot.name || t('a Bot')).join(` ${joiner} `)
+  if (quiet) {
+    return h('details', { className: 'bt-event bt-event-quiet' },
+      h('summary', { className: 'bt-event-summary', title: detail || undefined },
+        h('span', { className: 'bt-event-caret', 'aria-hidden': true }),
+        h('span', { className: 'bt-event-summary-label' }, summary ?? t('Bot exchange')),
+        h('span', { className: 'bt-event-summary-name' }, names)),
+      h('div', { className: 'bt-event-body' },
+        h('div', { className: 'bt-event-detail' }, detail || `${prefix} ${names}`),
+        onOpen && bots[0] ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => onOpen(bots[0]) }, t('Open bot exchange')) : null))
+  }
   if (whole && bots.length === 1) {
     return h('div', { className: 'bt-event' },
       h('button', { type: 'button', className: 'bt-event-whole', title: bots[0].name, onClick: () => onOpen?.(bots[0]) },
@@ -395,7 +416,12 @@ export function claimLines(claims) {
   return lines
 }
 
-export function GroupMessage({ bot, text, texts = [text], room, sessionId, roster, actions, msgKey, useUi, whole, time, duration, claims, changes }) {
+// The files a member's turn delivered, under its reply in a group chat: the same
+// delivered-file cards the earlier chat rows carry, indented past the avatar (#975).
+const groupFiles = files => (files === undefined || files.length === 0 ? null
+  : h('div', { className: 'bt-group-files' }, h(FileCards, { files })))
+
+export function GroupMessage({ bot, text, texts = [text], room, sessionId, roster, actions, msgKey, useUi, whole, time, duration, claims, changes, files }) {
   const ref = useRef(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -418,6 +444,7 @@ export function GroupMessage({ bot, text, texts = [text], room, sessionId, roste
       Number.isFinite(time) ? h('span', { className: 'bt-group-time', title: clockLabel(time) }, messageClock(time)) : null,
       took ? h('span', { className: 'bt-group-took', title: t('Ran for {duration}', { duration: took }) }, took) : null),
     h(Bubbles, { texts, roster, selfId: bot.id, actions, sessionId: quoteSession, msgKey, useUi, lead: flat ? null : lead, whole, textInteractionSource: true }),
+    groupFiles(files),
     changes === undefined ? null : h(ChangesCard, { changes, actions }),
     claimLines(claims).map(line => h('div', { key: line.kind + line.text, className: `bt-claim bt-claim-${line.kind}`, role: 'status', title: line.detail ?? undefined }, line.text)))
 }
@@ -608,7 +635,8 @@ export function ChatRows({ items, sessionId, roster, actions, useUi, clock = fal
     if (item.kind === 'bot' && last?.kind === 'bot') {
       last.texts.push(item.text)
       last.end = item.time
-    } else rows.push(item.kind === 'bot' ? { kind: 'bot', texts: [item.text], time: item.time, end: item.time } : item)
+      if (item.files !== undefined) last.files = [...(last.files ?? []), ...item.files]
+    } else rows.push(item.kind === 'bot' ? { kind: 'bot', texts: [item.text], time: item.time, end: item.time, ...(item.files === undefined ? {} : { files: item.files }) } : item)
   }
   let before
   return rows.flatMap((row, index) => {
@@ -641,7 +669,11 @@ function chatRow(row, key, { sessionId, selfId, roster, actions, useUi, onBtwDel
     case 'bot': {
       const bubbles = h(Bubbles, { key, texts: row.texts, roster, selfId, actions, sessionId: useUi ? sessionId : undefined, msgKey: useUi ? `${sessionId}:${row.time}` : undefined, useUi, fold: FOLD_HUGE, textInteractionSource: true })
       const speaker = layoutOf(roster.prefs) === 'flat' ? roster.byId[selfId] : undefined
-      return speaker ? h(Fragment, { key }, h(SpeakerHead, { bot: speaker, time: row.time }), bubbles) : bubbles
+      // Files the turn delivered ride its closing row; an earlier part draws the same
+      // delivered-file cards the group rows do, where DSH's live chat has its own (#1443).
+      const files = row.files === undefined || row.files.length === 0 ? null : h(FileCards, { files: row.files })
+      if (speaker === undefined && files === null) return bubbles
+      return h(Fragment, { key }, speaker ? h(SpeakerHead, { bot: speaker, time: row.time }) : null, bubbles, files)
     }
     case 'btw': return h(BtwCardView, { key, card: row.card, sessionId, actions, onDeleted: onBtwDelete })
     case 'post': {
@@ -649,7 +681,7 @@ function chatRow(row, key, { sessionId, selfId, roster, actions, useUi, onBtwDel
       const poster = roster.byId[row.botId] ?? { id: row.botId, name: row.name ?? t('a Bot'), color: 'gray' }
       return h(GroupMessage, {
         key, bot: poster, text: row.file ? stripLongNote(row.text) : row.text, texts: row.texts, room: roster.roomsById[sessionId], sessionId, roster, actions,
-        msgKey: `${sessionId}:post:${row.seq ?? row.time}`, time: row.time, duration: row.duration, claims: row.claims, changes: row.changes,
+        msgKey: `${sessionId}:post:${row.seq ?? row.time}`, time: row.time, duration: row.duration, claims: row.claims, changes: row.changes, files: row.files,
         whole: row.file ? { length: row.length, load: () => actions.fileText(row.file) } : undefined,
       })
     }
@@ -735,6 +767,9 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
           bot: poster, text: file ? stripLongNote(text) : text, room, sessionId, roster, actions, msgKey: `${sessionId}:post:${data.seq ?? node.key}`, useUi, time: data.time,
           claims: source.claims,
           changes: source.changes,
+          // A member that finishes after the round closed posts with its delivered files
+          // on the source; the history row carries them the same way (parts.js).
+          files: source.delivered,
           whole: file ? { length: source.length, load: () => actions.fileText(file) } : undefined,
         })
       }
@@ -765,14 +800,19 @@ export function TriggerCell({ node, sessionId, useRoster, useSessions, useTurnCl
         bots,
         onOpen: bot => actions.openExchange(selfId, bot.id),
         whole: true,
+        quiet: true,
+        summary: t('Bot exchange'),
+        detail: stripHeader(contentText(data.content)),
       })
     }
-    if (source.kind === 'schedule') {
-      const prompts = reminderPrompts(contentText(data.content))
-      return h('div', { className: 'bt-event' }, prompts.length > 0 ? t('Scheduled task: {text}', { text: prompts.join(' · ').slice(0, 80) }) : t('Routine started'))
-    }
+    // A scheduled task is automation metadata, not something the user said. The task
+    // itself stays in Details → Scheduled tasks.
+    if (source.kind === 'schedule') return null
     if (source.kind === 'user-question-reply' || source.kind === 'goal') return null
-    return h('div', { className: 'bt-event' }, contentText(data.content).slice(0, 80) || t('Update'))
+    // An unknown trigger keeps a small line, but never a raw model-control prompt.
+    const eventText = contentText(data.content).trim()
+    const safeText = eventText.startsWith('<') ? '' : eventText.slice(0, 80)
+    return h('div', { className: 'bt-event' }, safeText || t('Update'))
   }
 }
 
@@ -1000,9 +1040,11 @@ function RelayEvent({ reply, bot, sessionId, actions }) {
     return h('div', { className: 'bt-event' }, t('{name} was cut off by a restart again and stopped', { name: bot.name }))
   }
   if (reply.kind === 'approval' || reply.kind === 'working') {
+    // A run of steered starts drawn as one chip names how many turns it covers (#1624).
+    const label = t(reply.kind === 'working' ? '{name} started on it' : '{name} paused for your approval', { name: bot.name })
     return h('div', { className: 'bt-event' },
       h('button', { type: 'button', className: 'bt-event-whole', onClick: () => actions.showDetails(sessionId) },
-        h(BotMark, { bot, size: 16 }), h('span', { className: 'bt-event-name' }, t(reply.kind === 'working' ? '{name} started on it' : '{name} paused for your approval', { name: bot.name }))))
+        h(BotMark, { bot, size: 16 }), h('span', { className: 'bt-event-name' }, reply.kind === 'working' && reply.starts > 1 ? `${label} ×${reply.starts}` : label)))
   }
   if (reply.kind === 'folder') {
     return h('div', { className: 'bt-event' }, reply.text)
@@ -1092,7 +1134,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
   }
   const room = roster.roomsById[sessionId]
   return h('div', { className: 'bt-group-replies' },
-    stackReplies(replies).map(({ reply, index, texts, time, duration, claims, changes }) => {
+    drawnReplies(replies).map(({ reply, index, texts, time, duration, claims, changes, files }) => {
       const bot = roster.byId[reply.botId] ?? { id: reply.botId, name: reply.name, color: reply.color ?? 'gray' }
       if (reply.kind === 'user') {
         return h('div', { key: `user-${index}`, className: 'bt-urow' },
@@ -1106,7 +1148,7 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
         return h('div', { key: `goal-${index}`, className: 'bt-event', title: reply.text || undefined },
           h('span', { className: 'bt-event-ico', 'aria-hidden': true }, h(GoalIcon)), goalEventText(reply))
       }
-      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, texts, room, sessionId, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, time, duration, claims, changes })
+      return h(GroupMessage, { key: `${reply.botId}-${index}`, bot, texts, room, sessionId, roster, actions, msgKey: callId ? `${sessionId}:${callId}:${index}` : undefined, useUi, time, duration, claims, changes, files })
     }),
     pending.map((id, at) => {
       const bot = roster.byId[id]
@@ -1161,12 +1203,12 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot,
     case 'message_bot': {
       const target = findBot(arg('to')) ?? { name: arg('to') ?? '…', color: 'gray' }
       if (done && call.isError) return h('div', { className: 'bt-event' }, t("Couldn't message {name}", { name: target.name }))
-      return h(EventLine, { prefix: t('Messaged'), bots: [target], onOpen: bot => bot.id && actions.openExchange(self?.id ?? sessionId, bot.id), whole: true })
+      return h(EventLine, { prefix: t('Messaged'), bots: [target], onOpen: bot => bot.id && actions.openExchange(self?.id ?? sessionId, bot.id), whole: true, quiet: true, summary: t('Bot exchange') })
     }
     case 'stop_bot': {
       const target = findBot(arg('bot')) ?? { name: arg('bot') ?? '…', color: 'gray' }
       if (done && call.isError) return h('div', { className: 'bt-event' }, t("Couldn't stop {name}", { name: target.name }))
-      return h(EventLine, { prefix: t('Stopped'), bots: [target], onOpen: bot => bot.id && actions.openExchange(self?.id ?? sessionId, bot.id), whole: true })
+      return h(EventLine, { prefix: t('Stopped'), bots: [target], onOpen: bot => bot.id && actions.openExchange(self?.id ?? sessionId, bot.id), whole: true, quiet: true, summary: t('Bot exchange') })
     }
     case 'create_bot': {
       const created = findBot(arg('name'))

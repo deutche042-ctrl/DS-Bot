@@ -65,9 +65,11 @@ function scanReplies(text, start, replies) {
 
 // A member's messages in a row, as one block under its name: what it says while it
 // works comes one message at a time. A block carries the last message's time and run.
-export function stackReplies(replies) {
+// `index` is the row's place in the round's own reply list: the chat builds reaction
+// keys from it, so it must not count the rows a caller dropped first.
+function stackItems(entries) {
   const items = []
-  replies.forEach((reply, index) => {
+  entries.forEach(({ reply, index }) => {
     const last = items.at(-1)
     if (reply.kind === undefined && last?.reply.kind === undefined && last?.reply.botId === reply.botId
       && last.claims === undefined && (last.changes === undefined
@@ -79,6 +81,8 @@ export function stackReplies(replies) {
       // The change line belongs to the turn, so a later message of the same turn replaces
       // it rather than stacking a second one.
       if (reply.changes !== undefined) last.changes = reply.changes
+      // Delivered files of the same turn's messages draw on the one block (#975).
+      if (reply.files !== undefined) last.files = [...(last.files ?? []), ...reply.files]
     } else {
       items.push({
         reply, index,
@@ -86,8 +90,41 @@ export function stackReplies(replies) {
         time: reply.time, duration: reply.duration,
         ...(reply.claims === undefined ? {} : { claims: reply.claims }),
         ...(reply.changes === undefined ? {} : { changes: reply.changes }),
+        ...(reply.files === undefined ? {} : { files: reply.files }),
       })
     }
   })
   return items
+}
+
+export function stackReplies(replies) {
+  return stackItems(replies.map((reply, index) => ({ reply, index })))
+}
+
+// Whether a row ends the work episode a working row opened for its member: it posted,
+// finished, stopped, paused for the user, or failed after it.
+const endsWorkEpisode = reply => reply.kind === undefined
+  || ['done', 'stopped', 'approval', 'resumed', 'cut', 'failed', 'helper-failed', 'missed'].includes(reply.kind)
+
+// The rows the chat draws from a round's replies: a work start whose episode a later
+// row of the same member already ended says nothing the rows after it do not (#1624),
+// and a run of starts of one member still at work draws once, counted. The live chat
+// (client/cells.js) and the earlier-parts page (host/parts.js) read through this.
+export function drawnReplies(replies) {
+  const kept = []
+  for (let index = 0; index < replies.length; index += 1) {
+    const reply = replies[index]
+    if (reply?.kind !== 'working') { kept.push({ reply, index }); continue }
+    const botId = reply.botId
+    // Only a row after this one can end the episode it opens; an earlier post of the
+    // same member says nothing about work that started later.
+    if (replies.slice(index + 1).some(later => later?.botId === botId && endsWorkEpisode(later))) continue
+    const last = kept.at(-1)
+    if (last?.reply.kind === 'working' && last.reply.botId === botId) {
+      kept[kept.length - 1] = { ...last, reply: { ...last.reply, starts: (last.reply.starts ?? 1) + 1 } }
+    } else kept.push({ reply, index })
+  }
+  // The index stays the one in the round's own list, not this filtered list: reaction
+  // keys are built from it, and a dropped work-start must not shift them.
+  return stackItems(kept)
 }

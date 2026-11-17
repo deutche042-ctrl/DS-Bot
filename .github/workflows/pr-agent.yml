@@ -1,0 +1,51 @@
+name: PR-Agent
+
+# Qodo Merge / PR-Agent is free for public repositories. It needs an LLM key in the
+# repository secrets (OPENAI_KEY, or another provider's key listed in .pr_agent.toml);
+# without one this workflow reports that and does nothing, so a fork is never red
+# because of a missing secret.
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  # An ordinary comment must not cancel the review already running: only a new run
+  # replaces an old one, and a review is short enough to let it finish.
+  group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    name: Review the pull request
+    if: ${{ github.event.sender.type != 'Bot' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check for a model key
+        id: key
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+        run: |
+          if [ -n "$OPENAI_KEY" ]; then
+            echo "present=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=no" >> "$GITHUB_OUTPUT"
+            echo "::notice::OPENAI_KEY is not set, so PR-Agent is skipped. Add the secret to enable it."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'yes'
+      - uses: Codium-ai/pr-agent@v0.50.0
+        if: steps.key.outputs.present == 'yes'
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github_action_config.auto_review: 'true'
+          github_action_config.auto_describe: 'true'
+          github_action_config.auto_improve: 'false'

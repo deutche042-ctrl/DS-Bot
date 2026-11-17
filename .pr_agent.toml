@@ -1,0 +1,29 @@
+# Qodo Merge / PR-Agent settings. The pull request reviewer is free for public
+# repositories; the workflow that runs it needs an LLM key (OPENAI_KEY or another
+# provider) in the repository secrets, and skips itself when the key is absent.
+[config]
+git_provider = "github"
+publish_output = true
+publish_output_progress = false
+verbosity_level = 1
+
+[pr_reviewer]
+require_score_review = false
+require_tests_review = true
+require_estimate_effort_to_review = false
+require_security_review = true
+num_code_suggestions = 4
+inline_code_comments = true
+extra_instructions = """
+This repository is Apache-2.0. Flag copied code without a NOTICE entry, committed secrets,
+and any change to the generated ds-bot/client.js that is not accompanied by a rebuild from
+ds-bot/src/client. User-facing text is English; the phone app is the primary surface.
+"""
+
+[pr_description]
+publish_labels = true
+add_original_user_description = true
+generate_ai_title = false
+
+[pr_code_suggestions]
+commitable_code_suggestions = false
