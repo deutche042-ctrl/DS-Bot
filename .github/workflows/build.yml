@@ -1,0 +1,151 @@
+name: Build packages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: What to build
+        type: choice
+        options: [all, apk, appimage, windows]
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  linux-appimage:
+    name: Linux AppImage
+    if: github.event_name == 'push' || github.event.inputs.target == 'all' || github.event.inputs.target == 'appimage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the link dependencies
+        run: npm ci --no-fund --no-audit
+        working-directory: link
+      - name: Build the plugin bundles
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+        working-directory: ds-bot
+      - name: Install the app dependencies
+        run: npm ci --no-fund --no-audit
+        working-directory: app
+      - name: Seed the Electron checksums
+        run: node scripts/seed-electron-checksums.mjs
+        working-directory: app
+      - name: Pack the AppImage
+        run: npm run dist
+        working-directory: app
+      - name: Repack the AppImage smaller
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
+          version="$(node -p "require('./package.json').version")"
+          img="dist-pack/DS-Bot-$version-linux-x86_64.AppImage"
+          chmod +x "$img"
+          offset="$("$img" --appimage-offset)"
+          rm -rf squashfs-root
+          "$img" --appimage-extract >/dev/null
+          find squashfs-root -name '*.map' -type f -delete
+          (cd squashfs-root/locales && ls | grep -vE '^(ar|en-US)\.pak$' | xargs -r rm -f)
+          rm -f /tmp/appimage.squashfs
+          mksquashfs squashfs-root /tmp/appimage.squashfs -comp xz -b 1M -Xdict-size 100% -noappend -no-progress -processors "$(nproc)" >/dev/null
+          head -c "$offset" "$img" > "$img.new"
+          cat /tmp/appimage.squashfs >> "$img.new"
+          chmod +x "$img.new"
+          mv "$img.new" "$img"
+          rm -rf squashfs-root /tmp/appimage.squashfs
+          "$img" --appimage-offset >/dev/null
+          ls -l "$img"
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DS-Bot-linux-x64
+          path: app/dist-pack/DS-Bot-*-linux-x86_64.AppImage
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 9
+
+  android-apk:
+    name: Android APK
+    if: github.event_name == 'push' || github.event.inputs.target == 'all' || github.event.inputs.target == 'apk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install the link dependencies
+        run: npm ci --no-fund --no-audit
+        working-directory: link
+      - name: Install the phone app dependencies
+        run: npm ci --no-fund --no-audit
+        working-directory: mobile
+      - run: npm run typecheck
+        working-directory: mobile
+      - run: npm test
+        working-directory: mobile
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --no-install
+        working-directory: mobile
+      - name: Build the APK
+        run: |
+          (cd android && ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)
+          version="$(node -p "require('../ds-bot/package.json').version")"
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk "dist/DS-Bot-$version-android.apk"
+        working-directory: mobile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DS-Bot-android
+          path: mobile/dist/DS-Bot-*-android.apk
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 9
+
+  windows-installer:
+    name: Windows installer
+    if: github.event_name == 'push' || github.event.inputs.target == 'all' || github.event.inputs.target == 'windows'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the link dependencies
+        run: npm ci --no-fund --no-audit
+        working-directory: link
+      - name: Build the plugin bundles
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+        working-directory: ds-bot
+      - name: Install the app dependencies
+        run: npm ci --no-fund --no-audit
+        working-directory: app
+      - name: Seed the Electron checksums
+        run: node scripts/seed-electron-checksums.mjs
+        working-directory: app
+      - name: Pack the installer
+        run: npm run dist
+        working-directory: app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DS-Bot-windows-x64
+          path: app/dist-pack/DS-Bot-*-win-x64.exe
+          retention-days: 7
+          if-no-files-found: error
+          compression-level: 9

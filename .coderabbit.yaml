@@ -1,0 +1,27 @@
+language: en-US
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!ds-bot/client.js"
+    - "!ds-bot/link.js"
+    - "!**/package-lock.json"
+  path_instructions:
+    - path: "mobile/**"
+      instructions: >-
+        This is an Expo React Native app for Android. Check that RTL layout math reads
+        the device direction (I18nManager.isRTL or the Intl locale), that new user-facing
+        strings go through t(), and that nothing blocks the JS thread.
+    - path: "ds-bot/src/host/**"
+      instructions: >-
+        Host code: never read files outside the allowed roots without a realpath
+        containment check, keep answers under the phone link's 4 MiB message cap, and
+        add a unit test next to the existing ones.
+    - path: "ds-bot/src/client/**"
+      instructions: >-
+        client.js is generated from this directory: never edit it by hand.
