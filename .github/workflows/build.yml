@@ -137,6 +137,10 @@ jobs:
           node-version: 24
       - name: Install the phone link's packages
         run: npm ci --no-fund --no-audit --prefix ../link
+      - name: Install the squashfs tools
+        # electron-builder ships its own mksquashfs, but the repack below needs the
+        # distro's unsquashfs to verify the new payload.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools
       - name: Build the client
         working-directory: ds-bot
         run: |
@@ -186,10 +190,11 @@ jobs:
           # squashfs, so the file was not truncated or misaligned.
           offset="$("$app" --appimage-offset)"
           unsquashfs -o "$offset" -s "$app" >/dev/null
-          # The app must still start. Ubuntu 24.04 blocks Chromium's user namespaces
-          # unless the restriction is lifted, as the release workflow does.
+          # The app must still start, from the repacked AppImage itself rather than the
+          # unpacked build beside it. APPIMAGE_EXTRACT_AND_RUN avoids a FUSE mount,
+          # which Ubuntu 24.04 no longer provides by default.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          xvfb-run -a node scripts/check-packed.mjs
+          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a node scripts/check-packed.mjs "$app"
       - uses: actions/upload-artifact@v4
         with:
           name: DS-Bot-linux-appimage
