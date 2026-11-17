@@ -163,12 +163,15 @@ jobs:
           echo "runtime prefix: $offset bytes"
           rm -rf squashfs-root
           "$app" --appimage-extract >/dev/null
-          # Source maps are only useful in a checkout, and every locale but the app's own
-          # two is dead weight.
+          # Source maps are only useful in a checkout, and every Chromium locale pack but
+          # the app's own two is dead weight. Only *.pak files may go: other packages keep
+          # JavaScript under a directory also called locales (zod/v4/locales), and
+          # deleting those left the host unable to start.
           find squashfs-root -name '*.map' -delete
           find squashfs-root -type d -name locales -print0 | while IFS= read -r -d '' dir; do
-            find "$dir" -maxdepth 1 -type f ! -name 'ar.pak' ! -name 'en-US.pak' -delete
+            find "$dir" -maxdepth 1 -type f -name '*.pak' ! -name 'ar.pak' ! -name 'en-US.pak' -delete
           done
+          test -f squashfs-root/resources/app/node_modules/zod/v4/locales/index.js
           if [ -d squashfs-root/usr/share/locale ]; then
             find squashfs-root/usr/share/locale -mindepth 1 -maxdepth 1 -type d ! -name ar ! -name 'en*' -exec rm -rf {} +
           fi
@@ -190,11 +193,16 @@ jobs:
           # squashfs, so the file was not truncated or misaligned.
           offset="$("$app" --appimage-offset)"
           unsquashfs -o "$offset" -s "$app" >/dev/null
-          # The app must still start, from the repacked AppImage itself rather than the
-          # unpacked build beside it. APPIMAGE_EXTRACT_AND_RUN avoids a FUSE mount,
-          # which Ubuntu 24.04 no longer provides by default.
+          # The app must still start from the payload the repacked file carries. Unpack that
+          # file again and run the executable beside its resources: check-packed reads the
+          # resources next to the binary, which an AppImage mount does not have.
+          app_path="$PWD/$app"
+          check="$RUNNER_TEMP/repack-check"
+          rm -rf "$check" && mkdir -p "$check"
+          (cd "$check" && "$app_path" --appimage-extract >/dev/null)
+          test -x "$check/squashfs-root/dsbot"
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a node scripts/check-packed.mjs "$app"
+          xvfb-run -a node scripts/check-packed.mjs "$check/squashfs-root/dsbot"
       - uses: actions/upload-artifact@v4
         with:
           name: DS-Bot-linux-appimage
