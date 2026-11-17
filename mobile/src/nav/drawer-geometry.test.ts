@@ -68,10 +68,7 @@ test('snapOnFlick keeps the exact thresholds on the boundary', () => {
   assert.equal(snapOnFlick(0, -WIDTH / 2, WIDTH, false, 1), 0)
 })
 
-test('the panel anchor accounts for React Native swapping sides in native RTL', () => {
-  assert.deepEqual(panelAnchor(false, false), { left: 0 })
-  assert.deepEqual(panelAnchor(true, false), { right: 0 })
-  // Native RTL swaps left and right, so the property opposite the physical side is used.
-  assert.deepEqual(panelAnchor(true, true), { left: 0 })
-  assert.deepEqual(panelAnchor(false, true), { right: 0 })
+test('the panel anchor is the physical side, which Yoga does not mirror', () => {
+  assert.deepEqual(panelAnchor(false), { left: 0 })
+  assert.deepEqual(panelAnchor(true), { right: 0 })
 })

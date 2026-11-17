@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { BackHandler, I18nManager, Pressable, StyleSheet, View } from 'react-native'
+import { BackHandler, Pressable, StyleSheet, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated'
 import { ErrorBoundary } from '../ui/error-boundary.tsx'
@@ -82,10 +82,9 @@ export function Drawer({ width, edgeWidth = 24, edgeEnabled = true, content, chi
   const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }))
   const ctxValue = useMemo(() => ({ open, close, closeNow }), [open, close, closeNow])
   // RTL anchors the panel and the open-edge sensor to the right edge; the edge
-  // view stays full-height so it reaches under the header on both sides. React Native
-  // swaps left/right itself under native RTL, so the anchor accounts for that swap.
-  const nativeSwaps = I18nManager.isRTL === true && I18nManager.doLeftAndRightSwapInRTL !== false
-  const side = panelAnchor(rtl, nativeSwaps)
+  // view stays full-height so it reaches under the header on both sides. left/right are
+  // physical in Yoga, so the side follows the same flag as the offsets.
+  const side = panelAnchor(rtl)
 
   return (
     <DrawerCtx.Provider value={ctxValue}>

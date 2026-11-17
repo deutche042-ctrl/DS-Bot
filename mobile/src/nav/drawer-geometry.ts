@@ -30,16 +30,11 @@ export function snapOnFlick(velocityX: number, x: number, width: number, rtl: bo
 }
 
 // The style that puts the panel and its edge sensor on the physical side `rtl` names.
-// React Native swaps left and right itself when it runs in RTL, so with native RTL the
-// property is the opposite of the side it draws on; without that swap (a fresh install
-// whose language is Arabic but whose I18nManager still says LTR) the property is the
-// side directly. Getting this wrong anchors the panel on the wrong edge and leaves it
-// visible beside the screen while closed.
-export function panelAnchor(rtl: boolean, nativeSwaps: boolean): { left?: number; right?: number } {
+// Yoga treats left and right as physical edges and does not mirror them (only start/end
+// mirror), so the property is the side itself. An earlier attempt inverted it for native
+// RTL and anchored the panel on the left of an Arabic tablet while the offsets still
+// assumed the right, which parked the closed panel in the middle of the screen.
+export function panelAnchor(rtl: boolean): { left?: number; right?: number } {
   'worklet'
-  const physicalRight = rtl
-  const property = nativeSwaps
-    ? (physicalRight ? 'left' : 'right')
-    : (physicalRight ? 'right' : 'left')
-  return { [property]: 0 }
+  return rtl ? { right: 0 } : { left: 0 }
 }
