@@ -10,7 +10,9 @@ reviews:
   collapse_walkthrough: true
   auto_review:
     enabled: true
-    drafts: false
+    # A draft PR is still worth a review here: the device pass happens after the
+    # reviewers start, and the branch is stable while it waits.
+    drafts: true
     base_branches:
       - dev
       - main
