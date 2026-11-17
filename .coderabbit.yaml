@@ -1,0 +1,28 @@
+# CodeRabbit reviews pull requests for free on public repositories.
+# Install the GitHub App once: https://github.com/apps/coderabbitai
+language: en-US
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - dev
+      - main
+  path_filters:
+    # Generated: rebuilt from ds-bot/src/client by `npm run build`.
+    - '!ds-bot/client.js'
+    # Vendor and build output that no review can act on.
+    - '!**/node_modules/**'
+    - '!**/dist/**'
+    - '!**/dist-pack/**'
+    - '!mobile/android/**'
+    - '!**/*.lock'
+    - '!**/package-lock.json'
+chat:
+  auto_reply: true
