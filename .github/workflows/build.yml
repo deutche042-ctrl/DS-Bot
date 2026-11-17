@@ -45,9 +45,9 @@ jobs:
       - run: npm ci --no-fund --no-audit
       - run: npm run harness
       - run: npm test
-      - run: npm run build
       - name: The committed client.js matches src/client
         run: node scripts/build-client.mjs --check
+      - run: npm run build
       - run: npm run lint
       - name: Typecheck and test the phone app
         working-directory: mobile
@@ -85,6 +85,7 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
@@ -92,6 +93,7 @@ jobs:
             export DSBOT_ANDROID_KEYSTORE="$RUNNER_TEMP/upload.jks"
             export DSBOT_ANDROID_KEYSTORE_PASSWORD="$KEYSTORE_PASSWORD"
             export DSBOT_ANDROID_KEY_ALIAS="$KEY_ALIAS"
+            if [ -n "$KEY_PASSWORD" ]; then export DSBOT_ANDROID_KEY_PASSWORD="$KEY_PASSWORD"; fi
           fi
           (cd android && ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a,armeabi-v7a)
           rm -f "$RUNNER_TEMP/upload.jks"

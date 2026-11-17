@@ -1,7 +1,16 @@
 version: 2
 updates:
   # The Bot plugin, its test harness, the phone app, the phone link and the desktop app
-  # are five separate npm trees.
+  # are separate npm trees.
+  - package-ecosystem: npm
+    directory: /ds-bot/dev/harness
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      dsh:
+        patterns:
+          - '@deepseek-ai/*'
   - package-ecosystem: npm
     directory: /ds-bot
     schedule:

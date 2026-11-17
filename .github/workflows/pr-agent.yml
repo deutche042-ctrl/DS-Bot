@@ -16,8 +16,10 @@ permissions:
   pull-requests: write
 
 concurrency:
+  # An ordinary comment must not cancel the review already running: only a new run
+  # replaces an old one, and a review is short enough to let it finish.
   group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -39,7 +41,7 @@ jobs:
           fi
       - uses: actions/checkout@v4
         if: steps.key.outputs.present == 'yes'
-      - uses: Codium-ai/pr-agent@main
+      - uses: Codium-ai/pr-agent@v0.50.0
         if: steps.key.outputs.present == 'yes'
         env:
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
