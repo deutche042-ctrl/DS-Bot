@@ -270,7 +270,13 @@ Devin, OpenAI and Antigravity marks from the vendors' application icons.
 Adapted from forks of this repository (Apache License 2.0)
 ==============================================================================
 - Rory-X/DeepSeek-Bot: the one-page chat tail read in ds-bot/src/host/parts.js
-  (commit 5fd89255, "Stop the cold start from reading every Bot's session pages").
+  (commit 5fd89255, "Stop the cold start from reading every Bot's session pages");
+  the phone-width overlay pane in ds-bot/src/client/styles.js (commit e1bc4492,
+  "Make overlay panes full width on the phone"); and the avatar editor's phone
+  bottom sheet in ds-bot/src/client/bot-settings.js (commit 4cc71f49, "Keep the
+  avatar editor inside the phone viewport").
 - rml4791lol-lang/DS-Bot: the repeated-question prompt rule in
   ds-bot/src/host/prompt.js (commit 9945f6bc, "Do not redo a question this
-  conversation already answered").
+  conversation already answered"); and the transcript noise reduction in
+  ds-bot/src/client/{cells,text,user-message,styles}.js with its "Open bot
+  exchange" label (commit 7713733d, "Reduce chat transcript noise").
