@@ -57,6 +57,7 @@ function oldHome(root) {
   write(join(from, 'bot', 'state.json'), JSON.stringify(TEAM))
   write(join(from, 'bot', 'state.lock'), '{}')
   write(join(from, 'bot', 'inflight.json'), '{}')
+  write(join(from, 'bot', 'phone.json'), JSON.stringify({ identity: { deviceId: 'd-copied', publicKey: 'p', privateKey: 'k' }, accessToken: 't', on: true, devices: [{ deviceId: 'phone-1' }] }))
   write(join(from, 'bot', 'memory', 'session-a.md'), 'remember')
   write(join(from, 'bot', 'workspace', 'notes.txt'), 'old notes')
   write(join(from, 'bot', 'workspace', 'kept.txt'), 'old kept')
@@ -111,6 +112,11 @@ describe('importTeam', () => {
     assert.deepEqual(team.agents, {})
     assert.equal(readFileSync(join(to, 'bot', 'memory', 'session-a.md'), 'utf8'), 'remember')
     for (const name of ['state.lock', 'inflight.json', 'workspace']) assert.equal(existsSync(join(to, 'bot', name)), false, name)
+  })
+
+  // Two hosts with one phone identity replace each other on the Relay Server for ever.
+  test('does not copy the phone link identity or its paired phones', () => {
+    assert.equal(existsSync(join(to, 'bot', 'phone.json')), false)
   })
 
   test('copies every Session the team names into the same folder group, and only those', () => {

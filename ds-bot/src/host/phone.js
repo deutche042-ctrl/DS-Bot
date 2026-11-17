@@ -15,6 +15,21 @@ export const DEFAULT_SERVER = `wss://relay.dsbot.app${LINK_PATH}`
 
 const invalid = message => Object.assign(new Error(message), { code: 'bot/invalid' })
 
+// The desktop app copies a team from the user's DSH, and older copies included phone.json:
+// its relay identity and paired phones. Two dsh hosts then share one device id, and the
+// Relay Server allows one connection per identity, so each host replaces the other for
+// ever. An identity equal to the imported source is dropped here; this home makes its own
+// and the user pairs again, so only one host holds it.
+export function resetCopiedPhoneIdentity(data, source) {
+  if (typeof data?.identity?.deviceId !== 'string' || data.identity.deviceId === '') return false
+  if (typeof source?.identity?.deviceId !== 'string' || source.identity.deviceId !== data.identity.deviceId) return false
+  delete data.identity
+  delete data.accessToken
+  data.devices = []
+  data.on = false
+  return true
+}
+
 export function install(rt) {
   const path = join(rt.home, FILE)
   let data
@@ -26,9 +41,22 @@ export function install(rt) {
   let pairing = null
   let blocked
 
+  // A team imported by the desktop app before this fix carries the source's phone
+  // identity. Drop it once, before any link starts, so this home makes its own.
+  const resetImportedIdentity = () => {
+    try {
+      const imported = JSON.parse(readFileSync(join(rt.home, 'imported.json'), 'utf8'))
+      if (typeof imported?.from !== 'string') return
+      const source = JSON.parse(readFileSync(join(imported.from, 'bot', FILE), 'utf8'))
+      if (!resetCopiedPhoneIdentity(data, source)) return
+      write()
+      console.warn('DS Bot: this data location shared its phone link identity with the team it was imported from; a new one is made, so pair the phone again')
+    } catch { /* no imported team, or no readable source */ }
+  }
   const read = () => {
     if (data !== undefined) return data
     try { data = JSON.parse(readFileSync(path, 'utf8')) } catch { data = {} }
+    resetImportedIdentity()
     if (!Array.isArray(data.devices)) data.devices = []
     registry = new DeviceRegistry(data.devices, (devices) => { data.devices = devices; write() })
     return data
