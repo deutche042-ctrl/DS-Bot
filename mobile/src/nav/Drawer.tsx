@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { BackHandler, Pressable, StyleSheet, View } from 'react-native'
+import { BackHandler, I18nManager, Pressable, StyleSheet, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated'
 import { ErrorBoundary } from '../ui/error-boundary.tsx'
 import { SPRING_SHAPE } from '../ui/tokens.ts'
 import { t } from '../ui/i18n.ts'
 import { rightToLeft } from '../ui/direction.ts'
-import { clampedDrag, panelOffset, snapOnFlick } from './drawer-geometry.ts'
+import { clampedDrag, panelAnchor, panelOffset, snapOnFlick } from './drawer-geometry.ts'
 
 const DrawerCtx = createContext({ open: () => {}, close: () => {}, closeNow: () => {} })
 export const useDrawer = () => useContext(DrawerCtx)
@@ -82,8 +82,10 @@ export function Drawer({ width, edgeWidth = 24, edgeEnabled = true, content, chi
   const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }))
   const ctxValue = useMemo(() => ({ open, close, closeNow }), [open, close, closeNow])
   // RTL anchors the panel and the open-edge sensor to the right edge; the edge
-  // view stays full-height so it reaches under the header on both sides.
-  const side = rtl ? { right: 0 } : { left: 0 }
+  // view stays full-height so it reaches under the header on both sides. React Native
+  // swaps left/right itself under native RTL, so the anchor accounts for that swap.
+  const nativeSwaps = I18nManager.isRTL === true && I18nManager.doLeftAndRightSwapInRTL !== false
+  const side = panelAnchor(rtl, nativeSwaps)
 
   return (
     <DrawerCtx.Provider value={ctxValue}>

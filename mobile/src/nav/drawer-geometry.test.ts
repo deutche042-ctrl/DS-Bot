@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clampedDrag, panelOffset, snapOnFlick } from './drawer-geometry.ts'
+import { clampedDrag, panelAnchor, panelOffset, snapOnFlick } from './drawer-geometry.ts'
 
 const WIDTH = 300
 const CLOSED_LTR = -WIDTH
@@ -66,4 +66,12 @@ test('snapOnFlick keeps the exact thresholds on the boundary', () => {
   assert.equal(snapOnFlick(-350, -100, WIDTH, false, 1), 0)
   assert.equal(snapOnFlick(0, -WIDTH / 2, WIDTH, false, 0), CLOSED_LTR)
   assert.equal(snapOnFlick(0, -WIDTH / 2, WIDTH, false, 1), 0)
+})
+
+test('the panel anchor accounts for React Native swapping sides in native RTL', () => {
+  assert.deepEqual(panelAnchor(false, false), { left: 0 })
+  assert.deepEqual(panelAnchor(true, false), { right: 0 })
+  // Native RTL swaps left and right, so the property opposite the physical side is used.
+  assert.deepEqual(panelAnchor(true, true), { left: 0 })
+  assert.deepEqual(panelAnchor(false, true), { right: 0 })
 })

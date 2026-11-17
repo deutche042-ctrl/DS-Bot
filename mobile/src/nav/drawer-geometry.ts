@@ -28,3 +28,18 @@ export function snapOnFlick(velocityX: number, x: number, width: number, rtl: bo
   if (open === 0) return v > 350 || px > -width / 2 ? panelOffset(1, width, rtl) : panelOffset(0, width, rtl)
   return v < -350 || px < -width / 2 ? panelOffset(0, width, rtl) : panelOffset(1, width, rtl)
 }
+
+// The style that puts the panel and its edge sensor on the physical side `rtl` names.
+// React Native swaps left and right itself when it runs in RTL, so with native RTL the
+// property is the opposite of the side it draws on; without that swap (a fresh install
+// whose language is Arabic but whose I18nManager still says LTR) the property is the
+// side directly. Getting this wrong anchors the panel on the wrong edge and leaves it
+// visible beside the screen while closed.
+export function panelAnchor(rtl: boolean, nativeSwaps: boolean): { left?: number; right?: number } {
+  'worklet'
+  const physicalRight = rtl
+  const property = nativeSwaps
+    ? (physicalRight ? 'left' : 'right')
+    : (physicalRight ? 'right' : 'left')
+  return { [property]: 0 }
+}

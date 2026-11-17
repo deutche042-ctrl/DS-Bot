@@ -23,8 +23,10 @@ test('an expired code admits nobody, even with the right text', () => {
   const registry = new DeviceRegistry([], undefined, () => now)
   const { code, expiresAt } = registry.openPairing()
   now = expiresAt
-  assert.equal(registry.pairingOpen(), false)
+  // Ask authorization first: pairingOpen() clears the expired code, and would hide a
+  // missing expiry check inside authorize().
   assert.equal(registry.authorize('phone', 'key', { pairingCode: code }), false)
+  assert.equal(registry.pairingOpen(), false)
   assert.equal(registry.list().length, 0)
 })
 
@@ -32,6 +34,8 @@ test('five wrong codes close the open pairing', () => {
   const registry = new DeviceRegistry()
   registry.openPairing()
   for (let attempt = 0; attempt < 5; attempt += 1) {
+    // The first four misses leave the code open; only the fifth closes it.
+    if (attempt < 4) assert.equal(registry.pairingOpen(), true)
     assert.equal(registry.authorize('phone', 'key', { pairingCode: 'wrong' }), false)
   }
   assert.equal(registry.pairingOpen(), false)

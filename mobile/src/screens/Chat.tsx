@@ -4,7 +4,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Haptics from 'expo-haptics'
 import { downloadFile, downloadUrlFile } from '../team/file-download.ts'
-import { fileCapMessage, fileOverCap, fileRouteOf } from '../team/file-cap.ts'
+import { fileRouteOf } from '../team/file-cap.ts'
 import * as Sharing from 'expo-sharing'
 import type { Approval, Bot, Question, Room } from '../connection.ts'
 import { createChatCache } from '../team/chat-cache.ts'
@@ -266,10 +266,9 @@ export function ChatView({ bot, room, header, onMissing }: { bot?: Bot; room?: R
   const [photos, setPhotos] = useState<{ sessionId: string; refs: ImageRef[]; index: number } | null>(null)
   // Save and share hand the file to the phone: the host sends its bytes (a web-linked
   // file comes from the web), the app writes them to a cache file, and the system share
-  // sheet saves it into a folder or hands it to another app. Files past hello.maxFileBytes
-  // refuse with the limit named, before the bytes travel (#1443).
+  // sheet saves it into a folder or hands it to another app. Host files travel in
+  // chunks, so hello.maxFileBytes (a one-answer whole read) does not limit them.
   const deliverFile = useCallback(async (file: FileRef) => {
-    const cap = typeof hello?.maxFileBytes === 'number' ? hello.maxFileBytes : undefined
     const targetSession = file.sessionId ?? sessionId
     if (fileRouteOf(file) === 'url') {
       const saved = await downloadUrlFile(file.url!, file.name)
@@ -277,14 +276,13 @@ export function ChatView({ bot, room, header, onMissing }: { bot?: Bot; room?: R
       await Sharing.shareAsync(saved.uri, { mimeType: saved.mime, dialogTitle: saved.name })
       return
     }
-    if (fileOverCap(cap, file.bytes)) throw new Error(fileCapMessage(cap!))
     const payload = file.attachmentId !== undefined
       ? { sessionId: targetSession, attachmentId: file.attachmentId }
       : { sessionId: targetSession, seq: file.seq, index: file.index }
-    const saved = await downloadFile(call, payload, cap)
+    const saved = await downloadFile(call, payload)
     if (!(await Sharing.isAvailableAsync())) throw new Error(t('Saving to the device is not available on this phone'))
     await Sharing.shareAsync(saved.uri, { mimeType: saved.mime, dialogTitle: saved.name })
-  }, [call, sessionId, hello])
+  }, [call, sessionId])
   const saveFile = useCallback((file: FileRef) => {
     setFileError(null)
     void deliverFile(file).catch((failure: unknown) => setFileError((failure as { message?: string })?.message ?? t('Could not save this file')))

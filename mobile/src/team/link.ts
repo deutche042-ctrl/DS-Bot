@@ -225,10 +225,10 @@ export function useTeamLink(computer: SavedComputer, identity: PhoneIdentity) {
         clientRef.current = client
         setLinked(true)
         // The handshake: its api is null when the computer's DS Bot is too old for
-        // this app. The team read goes out with it, not after it: each is a round
-        // trip through the relay.
+        // this app. The phone names the versions it speaks, so a newer computer cannot
+        // answer with a version this app does not have and skip the update message.
         void poll()
-        const helloResult = await callBot<Hello>(client, 'hello', {}).catch((failure: unknown) => failure)
+        const helloResult = await callBot<Hello>(client, 'hello', { api: [PHONE_API] }).catch((failure: unknown) => failure)
         if (stopped) { void client.close(); return }
         // A failed call is not an old computer: say what happened and retry, so a
         // dropped tunnel stops reading as "update the computer" (it did before).
